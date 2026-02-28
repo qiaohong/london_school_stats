@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>London & Surrey School Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f6fa;
+    color: #222;
+    padding: 0 0 60px;
+  }
+
+  header {
+    background: #1a237e;
+    color: white;
+    padding: 28px 40px 24px;
+  }
+  header h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; }
+  header p  { margin-top: 6px; opacity: 0.75; font-size: 0.9rem; }
+
+  .stats {
+    display: flex;
+    gap: 16px;
+    padding: 24px 40px;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px 28px;
+    flex: 1;
+    min-width: 160px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    border-top: 4px solid #1a237e;
+  }
+  .stat-card .value { font-size: 2rem; font-weight: 700; color: #1a237e; }
+  .stat-card .label { font-size: 0.82rem; color: #666; margin-top: 4px; }
+
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 0 40px;
+  }
+  .chart-card {
+    background: white;
+    border-radius: 10px;
+    padding: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  .chart-card.full { grid-column: 1 / -1; }
+  .chart-card h2 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 18px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  @media (max-width: 900px) {
+    .charts { grid-template-columns: 1fr; }
+    .chart-card.full { grid-column: 1; }
+    header, .stats, .charts { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>London & Surrey School Report</h1>
+  <p>Ofsted inspection outcomes · KS2/KS4 attainment · Absence & exclusions · Admissions</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="charts">
+  <div class="chart-card">
+    <h2>Judgement distribution — all schools</h2>
+    <canvas id="chartDist" height="260"></canvas>
+  </div>
+
+  <div class="chart-card">
+    <h2>Phase split per local authority</h2>
+    <canvas id="chartPhase" height="260"></canvas>
+  </div>
+
+  <div class="chart-card full">
+    <h2>Ofsted grades by local authority (sorted by % Good or better)</h2>
+    <canvas id="chartByLA" height="420"></canvas>
+  </div>
+
+  <div class="chart-card full">
+    <h2>Total schools per local authority</h2>
+    <canvas id="chartTotal" height="420"></canvas>
+  </div>
+</div>
+
+<script>
+const laData      = {"labels": ["Surrey", "Barnet", "Croydon", "Bromley", "Enfield", "Newham", "Hillingdon", "Southwark", "Tower Hamlets", "Ealing", "Greenwich", "Lewisham", "Havering", "Bexley", "Brent", "Lambeth", "Haringey", "Redbridge", "Hounslow", "Wandsworth", "Waltham Forest", "Hackney", "Barking and Dagenham", "Richmond upon Thames", "Sutton", "Harrow", "Merton", "Islington", "Camden", "Hammersmith and Fulham", "Kingston upon Thames", "Westminster", "Kensington and Chelsea", "City of London"], "primary": [298, 91, 87, 76, 68, 68, 66, 66, 66, 65, 62, 64, 59, 60, 60, 58, 60, 52, 49, 58, 51, 50, 44, 45, 41, 40, 43, 40, 38, 36, 35, 33, 26, 1], "secondary": [59, 28, 24, 19, 21, 21, 22, 20, 18, 17, 16, 14, 18, 16, 16, 16, 12, 19, 21, 11, 17, 16, 13, 11, 14, 13, 9, 10, 10, 12, 11, 11, 6, 0], "totals": [357, 119, 111, 95, 89, 89, 88, 86, 84, 82, 78, 78, 77, 76, 76, 74, 72, 71, 70, 69, 68, 66, 57, 56, 55, 53, 52, 50, 48, 48, 46, 44, 32, 1]};
+const distData    = {"labels": ["Outstanding", "Good", "Requires Improvement", "Inadequate", "Not yet inspected"], "counts": [0, 0, 0, 0, 2617], "colours": ["#2e7d32", "#66bb6a", "#fb8c00", "#c62828", "#bdbdbd"]};
+const byLAData    = {"labels": ["Barking and Dagenham", "Barnet", "Bexley", "Brent", "Bromley", "Camden", "City of London", "Croydon", "Ealing", "Enfield", "Greenwich", "Hackney", "Hammersmith and Fulham", "Haringey", "Harrow", "Havering", "Hillingdon", "Hounslow", "Islington", "Kensington and Chelsea", "Kingston upon Thames", "Lambeth", "Lewisham", "Merton", "Newham", "Redbridge", "Richmond upon Thames", "Southwark", "Surrey", "Sutton", "Tower Hamlets", "Waltham Forest", "Wandsworth", "Westminster"], "series": {"Outstanding": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "Good": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "Requires Improvement": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "Inadequate": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "Not yet inspected": [57, 119, 76, 76, 95, 48, 1, 111, 82, 89, 78, 66, 48, 72, 53, 77, 88, 70, 50, 32, 46, 74, 78, 52, 89, 71, 56, 86, 357, 55, 84, 68, 69, 44]}, "colours": {"Outstanding": "#2e7d32", "Good": "#66bb6a", "Requires Improvement": "#fb8c00", "Inadequate": "#c62828", "Not yet inspected": "#bdbdbd"}};
+const summary     = {"total_schools": 2617, "total_primary": 2056, "total_secondary": 561, "pct_good_plus": 73.9};
+
+// ── Summary cards ─────────────────────────────────────────────────────────────
+const stats = [
+  { value: summary.total_schools.toLocaleString(),  label: "Total schools" },
+  { value: summary.total_primary.toLocaleString(),  label: "Primary schools" },
+  { value: summary.total_secondary.toLocaleString(),label: "Secondary schools" },
+  { value: summary.pct_good_plus + "%",             label: "Good or Outstanding" },
+];
+const statsEl = document.getElementById("stats");
+stats.forEach(s => {
+  statsEl.innerHTML += `
+    <div class="stat-card">
+      <div class="value">${s.value}</div>
+      <div class="label">${s.label}</div>
+    </div>`;
+});
+
+// ── Chart defaults ─────────────────────────────────────────────────────────────
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+Chart.defaults.font.size   = 12;
+Chart.defaults.color       = "#555";
+
+// ── 1. Judgement distribution (doughnut) ──────────────────────────────────────
+new Chart(document.getElementById("chartDist"), {
+  type: "doughnut",
+  data: {
+    labels:   distData.labels,
+    datasets: [{ data: distData.counts, backgroundColor: distData.colours, borderWidth: 2, borderColor: "#fff" }]
+  },
+  options: {
+    cutout: "60%",
+    plugins: {
+      legend: { position: "right", labels: { padding: 14, boxWidth: 14 } },
+      tooltip: {
+        callbacks: {
+          label: ctx => {
+            const total = ctx.dataset.data.reduce((a,b) => a+b, 0);
+            const pct   = (ctx.parsed / total * 100).toFixed(1);
+            return ` ${ctx.label}: ${ctx.parsed.toLocaleString()} (${pct}%)`;
+          }
+        }
+      }
+    }
+  }
+});
+
+// ── 2. Primary / Secondary stacked horizontal bar (by LA total) ───────────────
+new Chart(document.getElementById("chartPhase"), {
+  type: "bar",
+  data: {
+    labels: laData.labels,
+    datasets: [
+      { label: "Primary",   data: laData.primary,   backgroundColor: "#1565c0", borderRadius: 2 },
+      { label: "Secondary", data: laData.secondary, backgroundColor: "#42a5f5", borderRadius: 2 },
+    ]
+  },
+  options: {
+    indexAxis: "y",
+    plugins: { legend: { position: "top" } },
+    scales: {
+      x: { stacked: true, grid: { color: "#f0f0f0" } },
+      y: { stacked: true, ticks: { font: { size: 11 } } }
+    }
+  }
+});
+
+// ── 3. Judgements stacked bar by LA ───────────────────────────────────────────
+const gradeOrder = ["Outstanding", "Good", "Requires Improvement", "Inadequate", "Not yet inspected"];
+new Chart(document.getElementById("chartByLA"), {
+  type: "bar",
+  data: {
+    labels: byLAData.labels,
+    datasets: gradeOrder.map(g => ({
+      label:           g,
+      data:            byLAData.series[g],
+      backgroundColor: byLAData.colours[g],
+      borderRadius:    2,
+    }))
+  },
+  options: {
+    indexAxis: "y",
+    plugins: { legend: { position: "top" } },
+    scales: {
+      x: { stacked: true, grid: { color: "#f0f0f0" } },
+      y: { stacked: true, ticks: { font: { size: 11 } } }
+    }
+  }
+});
+
+// ── 4. Total schools bar ───────────────────────────────────────────────────────
+new Chart(document.getElementById("chartTotal"), {
+  type: "bar",
+  data: {
+    labels: laData.labels,
+    datasets: [{
+      label:           "Total schools",
+      data:            laData.totals,
+      backgroundColor: "#1a237e",
+      borderRadius:    4,
+    }]
+  },
+  options: {
+    indexAxis: "y",
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: "#f0f0f0" } },
+      y: { ticks: { font: { size: 11 } } }
+    }
+  }
+});
+</script>
+</body>
+</html>
