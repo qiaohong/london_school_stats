@@ -168,6 +168,7 @@ td { padding: 7px 10px; vertical-align: top; }
     <button class="tab" onclick="showTab('boroughs')">Boroughs</button>
     <button class="tab" onclick="showTab('compare')">Compare Schools</button>
     <button class="tab" onclick="showTab('nearby')">Nearby Schools</button>
+    <button class="tab" onclick="showTab('appendix')">Appendix</button>
   </div>
 
   <!-- ── KS2 panel ── -->
@@ -366,6 +367,108 @@ td { padding: 7px 10px; vertical-align: top; }
       </div>
       <div id="nearby-results"><p class="nearby-empty">Enter a postcode and radius above to find nearby schools.</p></div>
       <div id="nearby-map" class="nearby-map" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Appendix panel ── -->
+  <div id="tab-appendix" class="panel">
+    <div class="panel-inner" style="max-width:860px;line-height:1.7;color:#333;font-size:14px;">
+
+      <h2 style="margin-top:0;color:#1a3a5c;">Appendix</h2>
+
+      <h3 style="color:#1a3a5c;">1. Composite Score</h3>
+      <p>Each school is given a single <strong>composite score from 0 to 100</strong>. It is a
+      <em>relative</em> score — it tells you how a school performs compared to other London schools,
+      not an absolute measure of quality. A score of 75 means the school outperforms 75% of London
+      schools on the metrics included.</p>
+
+      <h4 style="color:#1a3a5c;">How it is calculated</h4>
+      <p>For each component metric, every school is percentile-ranked within London (0 = lowest,
+      100 = highest). Absence is inverted so that a lower absence rate produces a higher rank.
+      The component ranks are then combined using the weights below.</p>
+
+      <h4 style="color:#1a3a5c;">Primary schools (KS2)</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+        <thead><tr style="background:#f0f3f7;">
+          <th style="text-align:left;padding:7px 10px;">Component</th>
+          <th style="text-align:left;padding:7px 10px;">What it measures</th>
+          <th style="text-align:right;padding:7px 10px;">Weight</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="padding:6px 10px;">Average KS2 progress</td><td style="padding:6px 10px;color:#555;">Average progress in reading, writing &amp; maths relative to pupils' KS1 starting points</td><td style="padding:6px 10px;text-align:right;">40%</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:6px 10px;">% meeting expected standard in RWM</td><td style="padding:6px 10px;color:#555;">Proportion of pupils reaching the expected standard in reading, writing &amp; maths combined</td><td style="padding:6px 10px;text-align:right;">30%</td></tr>
+          <tr><td style="padding:6px 10px;">Absence rate</td><td style="padding:6px 10px;color:#555;">Overall absence rate (lower = better)</td><td style="padding:6px 10px;text-align:right;">15%</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:6px 10px;">% achieving higher standard in RWM</td><td style="padding:6px 10px;color:#555;">Proportion exceeding the expected standard — a proxy for academic stretch</td><td style="padding:6px 10px;text-align:right;">15%</td></tr>
+        </tbody>
+      </table>
+
+      <h4 style="color:#1a3a5c;">Secondary schools (KS4)</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+        <thead><tr style="background:#f0f3f7;">
+          <th style="text-align:left;padding:7px 10px;">Component</th>
+          <th style="text-align:left;padding:7px 10px;">What it measures</th>
+          <th style="text-align:right;padding:7px 10px;">Weight</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="padding:6px 10px;">Progress 8</td><td style="padding:6px 10px;color:#555;">How much progress pupils make across 8 subjects relative to similar pupils nationally</td><td style="padding:6px 10px;text-align:right;">35%</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:6px 10px;">% grade 5+ in English &amp; Maths</td><td style="padding:6px 10px;color:#555;">Proportion achieving a strong pass (grade 5 or above) in both English and Maths</td><td style="padding:6px 10px;text-align:right;">25%</td></tr>
+          <tr><td style="padding:6px 10px;">Absence rate</td><td style="padding:6px 10px;color:#555;">Overall absence rate (lower = better)</td><td style="padding:6px 10px;text-align:right;">15%</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:6px 10px;">% in sustained education post-16</td><td style="padding:6px 10px;color:#555;">Proportion of leavers in education ~16 months after KS4</td><td style="padding:6px 10px;text-align:right;">15%</td></tr>
+          <tr><td style="padding:6px 10px;">EBacc entry rate</td><td style="padding:6px 10px;color:#555;">Proportion of pupils entered for the English Baccalaureate (grade 4+)</td><td style="padding:6px 10px;text-align:right;">10%</td></tr>
+        </tbody>
+      </table>
+
+      <h4 style="color:#1a3a5c;">Sixth forms (KS5)</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+        <thead><tr style="background:#f0f3f7;">
+          <th style="text-align:left;padding:7px 10px;">Component</th>
+          <th style="text-align:left;padding:7px 10px;">What it measures</th>
+          <th style="text-align:right;padding:7px 10px;">Weight</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="padding:6px 10px;">A-level value added</td><td style="padding:6px 10px;color:#555;">Progress students make at A-level relative to their prior GCSE attainment</td><td style="padding:6px 10px;text-align:right;">40%</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:6px 10px;">% achieving AAB in facilitating subjects</td><td style="padding:6px 10px;color:#555;">Proportion achieving AAB or better in at least two facilitating subjects (e.g. sciences, maths, languages)</td><td style="padding:6px 10px;text-align:right;">25%</td></tr>
+          <tr><td style="padding:6px 10px;">% progressing to higher education</td><td style="padding:6px 10px;color:#555;">Proportion of leavers entering higher education</td><td style="padding:6px 10px;text-align:right;">25%</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:6px 10px;">Absence rate</td><td style="padding:6px 10px;color:#555;">Overall absence rate (lower = better)</td><td style="padding:6px 10px;text-align:right;">10%</td></tr>
+        </tbody>
+      </table>
+
+      <h4 style="color:#1a3a5c;">Caveats on the score</h4>
+      <ul style="color:#555;">
+        <li>Weights are judgement calls, not from an official DfE or Ofsted methodology.</li>
+        <li>If a component is missing for a school, it is treated as the London median (50) — so missing data neither helps nor hurts.</li>
+        <li>The score is relative to London only. A school scoring 80 here may score differently if benchmarked nationally.</li>
+        <li>Independent schools and special schools are ranked alongside state schools, which may not be a fair comparison depending on your use case.</li>
+      </ul>
+
+      <hr style="border:none;border-top:1px solid #dde4ec;margin:28px 0;">
+
+      <h3 style="color:#1a3a5c;">2. Data Sources</h3>
+      <ul style="color:#555;">
+        <li><strong>KS2 results</strong> — DfE revised performance tables (2022–23, 2023–24, 2024–25)</li>
+        <li><strong>KS4 results</strong> — DfE final/revised performance tables (2022–23, 2023–24, 2024–25)</li>
+        <li><strong>KS5 results</strong> — DfE final/revised performance tables (2022–23, 2023–24, 2024–25)</li>
+        <li><strong>Absence statistics</strong> — DfE school absence data (2022–23, 2023–24; 2024–25 not yet released)</li>
+        <li><strong>Pupil destinations</strong> — DfE pupil/student destination measures (2022–25)</li>
+        <li><strong>School census</strong> — DfE school census (2022–25), used for FSM%, EAL%, SEN%</li>
+        <li><strong>Ofsted ratings</strong> — Sourced from DfE school information files (2022–23 release); may not reflect the latest published ratings</li>
+        <li><strong>Postcode geocoding</strong> — <a href="https://postcodes.io" target="_blank">postcodes.io</a> (open source, no API key required)</li>
+      </ul>
+      <p style="color:#888;font-size:13px;">For the most up-to-date information, refer to
+        <a href="https://www.gov.uk/school-performance-tables" target="_blank">gov.uk/school-performance-tables</a>
+        and <a href="https://reports.ofsted.gov.uk" target="_blank">reports.ofsted.gov.uk</a>.</p>
+
+      <hr style="border:none;border-top:1px solid #dde4ec;margin:28px 0;">
+
+      <h3 style="color:#1a3a5c;">3. Known Limitations</h3>
+      <ul style="color:#555;">
+        <li>Progress 8 for 2024–25 was not published at time of data collection; affected schools show their 2023–24 figure.</li>
+        <li>KS2 progress scores require KS1 prior attainment as a baseline. DfE suspended KS1-referenced progress in 2022–23, so progress is only shown for 2023–24 and 2024–25.</li>
+        <li>Destinations data has a ~16-month lag; 2024–25 destinations are not yet available for most schools.</li>
+        <li>Suppressed values (small cohorts, marked SUPP/NE/NP/LOW by DfE) are treated as missing.</li>
+        <li>Ofsted inspection dates range from 2008 to 2024. Schools that have not been inspected recently retain their last known rating, which may be outdated.</li>
+      </ul>
+
     </div>
   </div>
 
