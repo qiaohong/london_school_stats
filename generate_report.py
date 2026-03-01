@@ -903,18 +903,32 @@ async function searchNearby() {
   }).bindPopup(`<b>${rawPc.toUpperCase()}</b><br>Your search location`).addTo(nmap);
   window._nearbyMapLayers.push(searchPin);
 
-  // School markers, coloured by phase
+  // School markers, coloured by phase.
+  // Schools that share the same postcode have identical lat/lng, so we offset
+  // coincident markers into a small circle so all 10 are visible.
   const phaseColors = { ks2: '#27ae60', ks4: '#2980b9', ks5: '#e67e22' };
+  const coordKey = d => `${d.lat.toFixed(5)},${d.lng.toFixed(5)}`;
+  const groups = {};
   for (const d of nearest) {
-    const m = L.circleMarker([d.lat, d.lng], {
-      radius: 8,
-      fillColor: phaseColors[d._phaseKey] || '#888',
-      color: '#fff', weight: 1.5, fillOpacity: 0.85
-    }).bindPopup(
-      `<b>${d.SCHNAME || '\u2014'}</b><br>` +
-      `${d._phaseLabel} \u00b7 ${d._dist.toFixed(1)} km`
-    ).addTo(nmap);
-    window._nearbyMapLayers.push(m);
+    const k = coordKey(d);
+    (groups[k] = groups[k] || []).push(d);
+  }
+  for (const group of Object.values(groups)) {
+    const offsetR = 0.0003; // ~30 m radius
+    group.forEach((d, i) => {
+      const angle = (2 * Math.PI * i) / group.length;
+      const mLat = group.length > 1 ? d.lat + offsetR * Math.cos(angle) : d.lat;
+      const mLng = group.length > 1 ? d.lng + offsetR * Math.sin(angle) : d.lng;
+      const m = L.circleMarker([mLat, mLng], {
+        radius: 8,
+        fillColor: phaseColors[d._phaseKey] || '#888',
+        color: '#fff', weight: 1.5, fillOpacity: 0.85
+      }).bindPopup(
+        `<b>${d.SCHNAME || '\u2014'}</b><br>` +
+        `${d._phaseLabel} \u00b7 ${d._dist.toFixed(1)} km`
+      ).addTo(nmap);
+      window._nearbyMapLayers.push(m);
+    });
   }
 
   // Fit map to show all markers
