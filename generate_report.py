@@ -9,9 +9,10 @@ import json
 import math
 import os
 import sqlite3
+import time
+import urllib.request
 
 import pandas as pd
-import pgeocode
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH  = os.path.join(BASE_DIR, "schools.db")
@@ -933,44 +934,54 @@ def main():
 
     print(f"  KS2: {len(ks2):,} rows, KS4: {len(ks4):,} rows, KS5: {len(ks5):,} rows, LA: {len(la):,} rows")
 
-    # ── Geocode postcodes ──────────────────────────────────────────────────────
-    # pgeocode for GB resolves outward codes (e.g. "EC2Y", "NW3") rather than
-    # full postcodes.  Extract unique outward codes and build a map.
-    print("Geocoding school postcodes…")
-    nomi = pgeocode.Nominatim('GB')
+    # ── Geocode postcodes via postcodes.io bulk API ────────────────────────────
+    # Uses full postcodes for precise coordinates (~10m accuracy vs district
+    # centroid ~1km accuracy from outward-code lookup).
+    print("Geocoding school postcodes via postcodes.io…")
 
-    def outward(pc):
-        """Return the outward code (part before the space) of a UK postcode."""
-        if not pc:
-            return None
-        return pc.strip().split()[0].upper()
+    all_pcs = list(
+        pd.concat([ks2['POSTCODE'], ks4['POSTCODE'], ks5['POSTCODE']])
+        .dropna().str.strip().str.upper().unique()
+    )
 
-    all_pcs = pd.concat([ks2['POSTCODE'], ks4['POSTCODE'], ks5['POSTCODE']]).dropna().unique()
-    outward_codes = list({outward(p) for p in all_pcs if outward(p)})
-    geo = nomi.query_postal_code(outward_codes)
-    geo_map = {}  # outward_code -> (lat, lng)
-    for _, row in geo.iterrows():
-        lat_v = row['latitude']
-        lng_v = row['longitude']
-        if pd.notnull(lat_v) and pd.notnull(lng_v):
-            geo_map[row['postal_code']] = (float(lat_v), float(lng_v))
+    geo_map = {}  # normalised postcode (no spaces) -> (lat, lng)
+    CHUNK = 100
+    for i in range(0, len(all_pcs), CHUNK):
+        chunk = all_pcs[i:i + CHUNK]
+        body = json.dumps({"postcodes": chunk}).encode()
+        req = urllib.request.Request(
+            "https://api.postcodes.io/postcodes",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+            for entry in data.get("result", []):
+                res = entry.get("result")
+                if res and res.get("latitude") and res.get("longitude"):
+                    key = entry["query"].replace(" ", "").upper()
+                    geo_map[key] = (float(res["latitude"]), float(res["longitude"]))
+        except Exception as exc:
+            print(f"  Warning: chunk {i//CHUNK + 1} failed ({exc})")
+        if i + CHUNK < len(all_pcs):
+            time.sleep(0.1)  # be polite; postcodes.io allows 100/min free
 
     def geo_lat(p):
         if not isinstance(p, str):
             return None
-        ow = outward(p)
-        return geo_map.get(ow, (None, None))[0]
+        return geo_map.get(p.replace(" ", "").upper(), (None, None))[0]
 
     def geo_lng(p):
         if not isinstance(p, str):
             return None
-        ow = outward(p)
-        return geo_map.get(ow, (None, None))[1]
+        return geo_map.get(p.replace(" ", "").upper(), (None, None))[1]
 
     for df in (ks2, ks4, ks5):
         df['lat'] = df['POSTCODE'].map(geo_lat)
         df['lng'] = df['POSTCODE'].map(geo_lng)
-    print(f"  Geocoded {len(geo_map):,} of {len(outward_codes):,} unique outward codes")
+    print(f"  Geocoded {len(geo_map):,} of {len(all_pcs):,} unique postcodes")
 
     html = HTML_TEMPLATE
     html = html.replace("__DATA_KS2__", df_to_json(ks2))
