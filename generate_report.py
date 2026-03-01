@@ -408,6 +408,15 @@ td { padding: 7px 10px; vertical-align: top; }
             <input type="checkbox" id="nearby-type-college" checked> College
           </label>
         </div>
+        <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
+          <span style="font-weight:500;color:#444;">Admissions:</span>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="nearby-adm-selective" checked> Selective
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="nearby-adm-nonselective" checked> Non-selective
+          </label>
+        </div>
         <button class="btn-search" onclick="searchNearby()">Search</button>
         <span class="filter-count" id="nearby-status"></span>
       </div>
@@ -445,6 +454,13 @@ td { padding: 7px 10px; vertical-align: top; }
       </ul>
     </div>
   </details>
+  <p style="margin-top:20px;font-size:12px;color:#999;text-align:center;line-height:1.6;">
+    &#9432;&nbsp; This tool uses data from the Department for Education and Ofsted.
+    Performance figures, Ofsted ratings and inspection dates may lag behind the most current published information.
+    Always verify with the school directly or via
+    <a href="https://www.gov.uk/school-performance-tables" target="_blank" style="color:#999;">gov.uk/school-performance-tables</a>
+    and <a href="https://reports.ofsted.gov.uk" target="_blank" style="color:#999;">reports.ofsted.gov.uk</a>.
+  </p>
 </div>
 
 <script>
@@ -901,6 +917,14 @@ async function searchNearby() {
     return;
   }
 
+  const wantSelective    = document.getElementById('nearby-adm-selective').checked;
+  const wantNonSelective = document.getElementById('nearby-adm-nonselective').checked;
+
+  if (!wantSelective && !wantNonSelective) {
+    status.textContent = 'Please select at least one admissions type.';
+    return;
+  }
+
   const typeAllowed = t => {
     if (!t) return true;
     if (t === 'Maintained school')  return wantMaintained;
@@ -911,11 +935,17 @@ async function searchNearby() {
     return true;
   };
 
+  const admAllowed = a => {
+    if (a === 'Selective') return wantSelective;
+    return wantNonSelective; // Non-selective, Not applicable, or null
+  };
+
   const nearest = DATA_NEARBY
     .filter(d => ((d._phaseKey === 'ks2' && wantKS2) ||
                   (d._phaseKey === 'ks4' && wantKS4) ||
                   (d._phaseKey === 'ks5' && wantKS5)) &&
-                 typeAllowed(d.MINORGROUP))
+                 typeAllowed(d.MINORGROUP) &&
+                 admAllowed(d.ADMPOL))
     .map(d => ({ ...d, _dist: haversine(lat, lng, d.lat, d.lng) }))
     .filter(d => d._dist <= radius)
     .sort((a, b) => a._dist - b._dist)
@@ -941,17 +971,30 @@ async function searchNearby() {
     return;
   }
 
+  function fmtOfsted(d) {
+    if (!d.OFSTEDRATING) return '\u2014';
+    const year = d.OFSTEDLASTINSP ? d.OFSTEDLASTINSP.split('-')[2] : null;
+    const cls = { 'Outstanding': 'color:#1a7a3a;font-weight:600',
+                  'Good': 'color:#2a6099',
+                  'Requires improvement': 'color:#c07000',
+                  'Inadequate': 'color:#c0392b;font-weight:600',
+                  'Special Measures': 'color:#c0392b;font-weight:600' }[d.OFSTEDRATING] || '';
+    return `<span style="${cls}">${d.OFSTEDRATING}</span>` +
+           (year ? `<br><span style="color:#888;font-size:11px;">${year}</span>` : '');
+  }
+
   resultsEl.innerHTML = `<div class="tbl-wrap"><table>
     <thead><tr>
       <th>School</th><th>Address</th><th>Borough</th><th>Type</th><th>Phase</th>
-      <th class="num">Distance</th><th class="num">Score</th>
+      <th>Ofsted</th><th class="num">Distance</th><th class="num">Score</th>
     </tr></thead>
     <tbody>${nearest.map(d => `<tr>
       <td>${d.SCHNAME || '\u2014'}</td>
       <td>${fmtAddr(d)}</td>
       <td>${d.LANAME  || '\u2014'}</td>
-      <td>${d.MINORGROUP || '\u2014'}</td>
+      <td><span style="font-size:12px;">${d.SCHOOLTYPE || d.MINORGROUP || '\u2014'}</span></td>
       <td><span class="phase-badge phase-${d._phaseKey}">${d._phaseLabel}</span></td>
+      <td>${fmtOfsted(d)}</td>
       <td class="num">${d._dist.toFixed(2)} km</td>
       <td class="num">${scoreChip(d.composite_score)}</td>
     </tr>`).join('')}</tbody>
@@ -1057,19 +1100,19 @@ async function searchNearby() {
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-KS2_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "data_year",
+KS2_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "SCHOOLTYPE", "ADMPOL", "data_year",
             "total_pupils", "pct_rwm_expected", "pct_rwm_high",
             "avg_progress", "absence_pct", "pct_fsm", "rwm_trend", "composite_score",
             "POSTCODE"]
 
-KS4_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "data_year",
+KS4_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "SCHOOLTYPE", "ADMPOL", "data_year",
             "ks4_cohort", "progress8", "attainment8",
             "pct_grade5_eng_maths", "pct_ebacc_4plus",
             "dest_pct_education", "absence_pct",
             "p8_trend", "punching_above_weight", "composite_score",
             "POSTCODE"]
 
-KS5_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "data_year",
+KS5_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "SCHOOLTYPE", "ADMPOL", "data_year",
             "alevel_cohort", "alevel_value_added",
             "pct_aab_facilitating", "dest_pct_he",
             "absence_pct", "va_trend", "composite_score",
@@ -1085,19 +1128,24 @@ def main():
     ks5 = load(conn, "metrics_ks5", KS5_COLS)
     la  = load(conn, "metrics_la")
 
-    # Address lookup: one row per URN (latest year available)
-    addr = load(conn, "schools", ["URN", "STREET", "LOCALITY", "TOWN"])
-    addr = addr.drop_duplicates("URN")
+    # Address + Ofsted lookup: most recent row per URN
+    addr = pd.read_sql(
+        "SELECT URN, STREET, LOCALITY, TOWN, OFSTEDRATING, OFSTEDLASTINSP "
+        "FROM schools ORDER BY academic_year DESC",
+        conn
+    ).drop_duplicates("URN")
 
     conn.close()
 
     print(f"  KS2: {len(ks2):,} rows, KS4: {len(ks4):,} rows, KS5: {len(ks5):,} rows, LA: {len(la):,} rows")
 
-    # Merge address fields into each phase dataframe via URN, then drop URN
+    # Merge address + Ofsted fields into each phase dataframe via URN, then drop URN
     for df in (ks2, ks4, ks5):
         merged = df.merge(addr, on="URN", how="left")
-        df["STREET"]   = merged["STREET"].values
-        df["LOCALITY"] = merged["LOCALITY"].values
+        df["STREET"]         = merged["STREET"].values
+        df["LOCALITY"]       = merged["LOCALITY"].values
+        df["OFSTEDRATING"]   = merged["OFSTEDRATING"].values
+        df["OFSTEDLASTINSP"] = merged["OFSTEDLASTINSP"].values
     ks2.drop(columns=["URN"], inplace=True)
     ks4.drop(columns=["URN"], inplace=True)
     ks5.drop(columns=["URN"], inplace=True)
