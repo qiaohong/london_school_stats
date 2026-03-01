@@ -1,6 +1,6 @@
 # School Selector — Handoff Notes
 **Date**: 2026-03-01
-**Status**: Steps 1–4 complete. `report.html` built and ready to push to gh-pages.
+**Status**: Steps 1–4 complete. `report.html` built and ready to push to gh-pages. Repo and directory renamed to `london_school_stats`.
 
 ---
 
@@ -20,13 +20,13 @@
 ### To deploy the report
 
 ```bash
-cd "school selector"
+cd london_school_stats
 git add report.html generate_report.py compute_metrics.py load_data.py quality_report.py .gitignore HANDOFF.md
 git commit -m "Add school performance report and data pipeline"
 git push origin gh-pages
 ```
 
-Then visit: https://qiaohong.github.io/school-report/report.html
+Then visit: https://qiaohong.github.io/london_school_stats/report.html
 
 ---
 
@@ -112,7 +112,7 @@ Each component is percentile-ranked within London. Missing → 50 (neutral/media
 ## Key File Structure
 
 ```
-school selector/
+london_school_stats/
 ├── data/
 │   ├── 2022-2023/        # DfE CSVs + XLSXs
 │   ├── 2023-2024/
@@ -128,3 +128,17 @@ school selector/
 ├── .gitignore
 └── HANDOFF.md
 ```
+
+---
+
+## Session Log
+
+### 2026-03-01 — Repo & directory cleanup
+
+- **Identified nested git repos**: `/root/my-vault/.git` and `/root/my-vault/london_school_stats/.git` (formerly `school selector/`)
+- **Revoked leaked GitHub PAT** that was embedded in `/root/my-vault/.git` remote URL
+- **Removed** `/root/my-vault/.git` (stray Obsidian vault repo, no longer needed)
+- **Renamed** directory `school selector/` → `london_school_stats/` to match GitHub repo name
+- **Updated remote URLs** in both repos from `Feb26` → `london_school_stats`
+- **Updated all references** to old path in: `.gitignore`, `.obsidian/workspace.json`, `.claude/settings.local.json`, `MEMORY.md`, `HANDOFF.md`
+- Auth on the droplet works via `gh` CLI OAuth token (not the PAT) — no action needed for new PAT
