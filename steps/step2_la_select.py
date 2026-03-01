@@ -59,10 +59,40 @@ def _la_school_quality(ks_keys: list[str]) -> dict[str, float]:
     return result
 
 
-def _rank_las(results: list[dict], quality: dict[str, float]) -> list[dict]:
+_HIGH_SCORE_THRESHOLD = 60  # above-median with clear buffer; >=70 leaves some LAs with zero
+
+
+def _la_high_score_count(ks_keys: list[str]) -> dict[str, int]:
+    """
+    Return {la_name: count} of distinct schools with composite_score >= 60,
+    summed across the relevant phase tables.
+    """
+    if not ks_keys:
+        return {}
+    conn = sqlite3.connect(_DB_PATH)
+    cur = conn.cursor()
+    counts: dict[str, int] = {}
+    for ks_key in ks_keys:
+        table = f"metrics_{ks_key}"
+        cur.execute(
+            f"SELECT LANAME, COUNT(DISTINCT URN) FROM {table} "
+            f"WHERE composite_score >= ? GROUP BY LANAME",
+            (_HIGH_SCORE_THRESHOLD,),
+        )
+        for row in cur.fetchall():
+            counts[row[0]] = counts.get(row[0], 0) + row[1]
+    conn.close()
+    return counts
+
+
+def _rank_las(
+    results: list[dict],
+    quality: dict[str, float],
+    high_count: dict[str, int],
+) -> list[dict]:
     """
     Re-rank LAs that pass commute filter by combined score:
-      50% commute (lower mid = better) + 50% school quality (higher = better).
+      35% commute + 30% avg school quality + 35% count of schools scoring ≥ 70.
     """
     if not results:
         return results
@@ -75,14 +105,19 @@ def _rank_las(results: list[dict], quality: dict[str, float]) -> list[dict]:
     min_quality = min(quality.values()) if quality else 0
     quality_range = max_quality - min_quality or 1
 
+    max_count = max(high_count.values()) if high_count else 1
+    min_count = min(high_count.values()) if high_count else 0
+    count_range = max_count - min_count or 1
+
     scored = []
     for la, mid in zip(results, mids):
         commute_score = 1 - (mid - min_mid) / (max_mid - min_mid + 1)
         q = quality.get(la["la_name"], 50)
         quality_score = (q - min_quality) / quality_range
-        combined = 0.5 * commute_score + 0.5 * quality_score
-        n_schools = 0
-        scored.append({**la, "_combined": combined, "_quality": q, "_n_schools": n_schools})
+        c = high_count.get(la["la_name"], 0)
+        count_score = (c - min_count) / count_range
+        combined = 0.35 * commute_score + 0.30 * quality_score + 0.35 * count_score
+        scored.append({**la, "_combined": combined, "_quality": q, "_high_score_count": c})
 
     scored.sort(key=lambda x: -x["_combined"])
     return scored
@@ -124,7 +159,8 @@ def render():
         with st.spinner("Estimating commute times and school quality by borough…"):
             results = filter_las_by_commute(work_lat, work_lng, limit, flex)
             quality = _la_school_quality(ks_keys)
-            ranked = _rank_las(results, quality)
+            high_count = _la_high_score_count(ks_keys)
+            ranked = _rank_las(results, quality, high_count)
         st.session_state.la_commute_results = ranked
         st.session_state._commute_key = cache_key
 
@@ -140,14 +176,15 @@ def render():
     if recommended:
         st.subheader(f"Recommended boroughs for {phases_label}")
         st.caption(
-            "Ranked by a combination of commute time (50%) and school quality "
-            "— average composite score across relevant phases (50%)."
+            "Ranked by commute time (35%), average school quality (30%), "
+            "and number of schools scoring ≥ 60/100 (35%)."
         )
         for la in recommended:
             mn, mx = la["commute_min"], la["commute_max"]
             lines = ", ".join(la["lines"][:3])
             q = quality.get(la["la_name"])
-            q_str = f" · School quality score: **{q:.0f}/100**" if q else ""
+            q_str = f" · Quality: **{q:.0f}/100**" if q else ""
+            hc = la.get("_high_score_count", 0)
             with st.expander(f"**{la['la_name']}** — {mn}–{mx} min commute", expanded=True):
                 cols = st.columns([3, 1])
                 with cols[0]:
@@ -156,8 +193,10 @@ def render():
                 with cols[1]:
                     st.metric("Commute", f"{mn}–{mx} min")
                     if q:
-                        st.metric("School quality", f"{q:.0f}/100",
+                        st.metric("Avg quality", f"{q:.0f}/100",
                                   help="Average composite score across relevant phases (London avg = 50).")
+                    st.metric("Schools ≥ 60", str(hc),
+                              help="Number of schools with composite score ≥ 60/100 across relevant phases (above London median with a clear margin).")
     else:
         st.warning(
             f"No boroughs found within {effective} minutes of {postcode}. "

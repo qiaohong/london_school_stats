@@ -23,6 +23,21 @@ _OFSTED_COLOUR = {
 }
 
 
+def _school_details(urn: int) -> dict:
+    """Fetch address and age range from the schools table by URN."""
+    conn = sqlite3.connect(_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT STREET, LOCALITY, ADDRESS3, TOWN, POSTCODE, AGELOW, AGEHIGH "
+        "FROM schools WHERE URN=? LIMIT 1",
+        (urn,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else {}
+
+
 def _la_avg(borough: str, phase: str) -> dict:
     conn = sqlite3.connect(_DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -83,8 +98,8 @@ def _section_metrics_ks2(school: dict, la_avg: dict, lon_avg: dict):
     ]
     for col, (label, val, avg, hib, fmt) in zip(cols, metrics):
         if val is not None:
-            delta_str, _ = _delta(val, avg, hib, fmt) if avg else (None, None)
-            col.metric(label, f"{val:{fmt}}", delta=delta_str)
+            delta_str, delta_colour = _delta(val, avg, hib, fmt) if avg else (None, "normal")
+            col.metric(label, f"{val:{fmt}}", delta=delta_str, delta_color=delta_colour or "normal")
         else:
             col.metric(label, "n/a")
 
@@ -108,8 +123,8 @@ def _section_metrics_ks4(school: dict, la_avg: dict, lon_avg: dict):
     ]
     for col, (label, val, avg, hib, fmt) in zip(cols, metrics):
         if val is not None:
-            delta_str, _ = _delta(val, avg, hib, fmt) if avg else (None, None)
-            col.metric(label, f"{val:{fmt}}", delta=delta_str)
+            delta_str, delta_colour = _delta(val, avg, hib, fmt) if avg else (None, "normal")
+            col.metric(label, f"{val:{fmt}}", delta=delta_str, delta_color=delta_colour or "normal")
         else:
             col.metric(label, "n/a")
 
@@ -144,8 +159,8 @@ def _section_metrics_ks5(school: dict, la_avg: dict, lon_avg: dict):
     ]
     for col, (label, val, avg, hib, fmt) in zip(cols, metrics):
         if val is not None:
-            delta_str, _ = _delta(val, avg, hib, fmt) if avg else (None, None)
-            col.metric(label, f"{val:{fmt}}", delta=delta_str)
+            delta_str, delta_colour = _delta(val, avg, hib, fmt) if avg else (None, "normal")
+            col.metric(label, f"{val:{fmt}}", delta=delta_str, delta_color=delta_colour or "normal")
         else:
             col.metric(label, "n/a")
 
@@ -214,16 +229,31 @@ def render():
     with nb_c1:
         if crime_data and crime_data.get("total", 0) > 0:
             label, colour = crime_label(crime_data["total"])
+            total = crime_data["total"]
             month = crime_data.get("month", "")
-            st.metric("Crime (1-mile radius)", f"{crime_data['total']:,} / month",
-                      help=f"All crimes within ~1 mile, {month} (data.police.uk)")
-            st.caption(f"Level: :{colour}[{label}]")
-
             by_cat = crime_data.get("by_category", {})
+            violent = by_cat.get("violent-crime", 0)
+            violent_pct = round(violent / total * 100) if total else 0
+
+            st.metric("Crime (1-mile radius)", f"{total:,} / month",
+                      help=f"All recorded crimes within ~1 mile of the school's postcode, {month} (data.police.uk).")
+            st.markdown(f"**Level: :{colour}[{label}]**")
+            st.caption(
+                f"Bands: Low < 400 · Moderate 400–699 · High 700–999 · Very high ≥ 1,000 "
+                f"crimes/month in a 1-mile radius. "
+                f"These reflect typical variation across London neighbourhoods."
+            )
             if by_cat:
-                top = sorted(by_cat.items(), key=lambda x: -x[1])[:6]
-                rows = [f"| {CRIME_CATEGORY_LABELS.get(k, k)} | {v} |" for k, v in top]
-                st.markdown("| Category | Count |\n|---|---|\n" + "\n".join(rows))
+                top2 = sorted(by_cat.items(), key=lambda x: -x[1])[:2]
+                top2_str = " and ".join(
+                    f"{CRIME_CATEGORY_LABELS.get(k, k).lower()} ({v:,})"
+                    for k, v in top2
+                )
+                st.caption(
+                    f"The two most common crime types are {top2_str}. "
+                    f"Violent crime accounts for **{violent:,} incidents ({violent_pct}%)** — "
+                    f"the category most directly relevant to personal safety."
+                )
         else:
             st.caption("Crime data not available for this location.")
 
@@ -240,12 +270,116 @@ def render():
 
     st.divider()
 
+    # ── School info ───────────────────────────────────────────────────────────
+    st.subheader("School information")
+
+    details = _school_details(school["URN"])
+
+    info_col1, info_col2 = st.columns(2)
+    with info_col1:
+        # Full address
+        addr_parts = [
+            details.get("STREET"),
+            details.get("LOCALITY"),
+            details.get("ADDRESS3"),
+            details.get("TOWN"),
+            school.get("POSTCODE"),
+        ]
+        address = ", ".join(p for p in addr_parts if p)
+        st.markdown(f"**Address**")
+        st.write(address or school.get("POSTCODE", "n/a"))
+
+        # Age range
+        age_low = details.get("AGELOW")
+        age_high = details.get("AGEHIGH")
+        if age_low is not None and age_high is not None:
+            st.markdown(f"**Age range:** {int(age_low)}–{int(age_high)}")
+
+        # School type
+        st.markdown(f"**Type:** {school.get('MINORGROUP', 'n/a')}")
+
+    with info_col2:
+        # Pupil numbers & context
+        cohort = school.get("census_total_pupils") or school.get("ks4_cohort")
+        if cohort:
+            st.metric("Total pupils", f"{int(cohort):,}")
+
+        fsm = school.get("pct_fsm")
+        eal = school.get("pct_eal")
+        sen = school.get("pct_sen_support")
+        if fsm is not None:
+            st.metric("Free school meals", f"{fsm:.1f}%",
+                      help="% of pupils eligible for free school meals — a proxy for socioeconomic deprivation.")
+        if eal is not None:
+            st.metric("English as additional language", f"{eal:.1f}%",
+                      help="% of pupils whose first language is not English (DfE census).")
+
+    st.divider()
+
     # ── Admissions info ───────────────────────────────────────────────────────
     st.subheader("Admissions")
 
     admpol = school.get("ADMPOL") or "Non-selective"
     relchar = school.get("RELCHAR")
     la_url = _ADMISSIONS_URLS.get(la_name)
+
+    # Standard vs in-year determination (including future phases)
+    import datetime as _dt
+    _today = _dt.date.today()
+    _acad_start = _today.year if _today.month >= 9 else _today.year - 1
+
+    # apply_yg: year group at which child makes the standard application
+    # max_in_phase: max year group still within this phase (above = left phase)
+    _ENTRY = {
+        "ks2": {"apply_yg": -1, "max_in_phase":  6, "applying_for": "Reception",
+                "deadline_fmt": lambda yr: f"~15 Jan {_acad_start + yr + 1}"},
+        "ks4": {"apply_yg":  6, "max_in_phase": 11, "applying_for": "Year 7",
+                "deadline_fmt": lambda yr: f"31 Oct {_acad_start + yr}"},
+        "ks5": {"apply_yg": 11, "max_in_phase": 13, "applying_for": "Year 12",
+                "deadline_fmt": lambda yr: f"typically Jan–Mar {_acad_start + yr + 1}"},
+    }
+    children = st.session_state.get("children", [])
+    entry = _ENTRY.get(ks_key, {})
+    apply_yg = entry.get("apply_yg")
+    applying_for = entry.get("applying_for", "this phase")
+
+    is_standard = False
+    adm_when = ""
+    for child in children:
+        yg = child.get("year_group")
+        if yg is None or apply_yg is None:
+            continue
+        if yg <= apply_yg:
+            is_standard = True
+            years_until = apply_yg - yg
+            deadline = entry["deadline_fmt"](years_until)
+            if years_until == 0:
+                adm_when = f"applying for {applying_for} this cycle ({deadline})"
+            else:
+                adm_when = (
+                    f"applying for {applying_for} in "
+                    f"{years_until} year{'s' if years_until > 1 else ''} ({deadline})"
+                )
+            break
+
+    if is_standard:
+        adm_type_label = f"📋 **Standard admission** — {adm_when}"
+        adm_distance_note = (
+            "With standard admission, **where you live is usually the decisive factor**. "
+            "For oversubscribed non-selective schools, places go to children who live closest "
+            "(straight-line from home to school gate, after sibling and faith priorities). "
+            "If you are not yet living near the school, your application will be assessed on your current address."
+        )
+    else:
+        adm_type_label = "📝 **In-year admission** — joining mid-phase"
+        adm_distance_note = (
+            "With in-year admission, **distance is less decisive**. Schools must offer a place if they have a "
+            "vacancy in the relevant year group — you do not compete against other applicants in an annual round. "
+            "Apply directly to the school or the local authority. If a school is full, you can ask to be added "
+            "to a waiting list, where proximity typically determines position."
+        )
+    st.markdown(adm_type_label)
+    st.caption(adm_distance_note)
 
     col_a, col_b = st.columns(2)
     with col_a:

@@ -16,6 +16,30 @@ from utils.neighbourhood import (
 
 _KS_LABELS = {"ks2": "Primary", "ks4": "Secondary", "ks5": "Sixth Form"}
 
+# Standard entry point: {ks_key: (child_year_group, applying_for, deadline_note)}
+_STANDARD_ENTRY = {
+    "ks2": (( -1,  0), "Reception",        "deadline ~15 Jan for Sept start"),
+    "ks4": ((  6,  6), "Year 7",            "deadline ~31 Oct for Sept start"),
+    "ks5": (( 11, 11), "Year 12",           "deadline varies by school"),
+}
+
+
+def _phase_admission_type(ks_key: str) -> tuple[str, str]:
+    """
+    Return (type_label, detail) for the admission process relevant to this phase,
+    based on the children stored in session state.
+    """
+    children = st.session_state.get("children", [])
+    entry = _STANDARD_ENTRY.get(ks_key)
+    if entry:
+        yg_range, applying_for, deadline = entry
+        yg_min, yg_max = yg_range
+        for child in children:
+            yg = child.get("year_group")
+            if yg is not None and yg_min <= yg <= yg_max:
+                return "Standard admission", f"applying for {applying_for} ({deadline})"
+    return "In-year admission", "joining mid-phase — apply directly to school or LA"
+
 _MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
 def _fmt_insp_date(raw: str) -> str:
@@ -150,8 +174,7 @@ def _school_card(school: dict, nb: dict, ks_key: str, idx: int):
                 )
                 st.caption(
                     f"All crimes within ~1 mile of the **school's postcode** "
-                    f"({month}, data.police.uk). "
-                    "Radius is fixed by the API and cannot be narrowed."
+                    f"({month}, data.police.uk)."
                 )
                 st.caption(f"Level: :{colour}[{label}]")
             elif crime_data is not None:
