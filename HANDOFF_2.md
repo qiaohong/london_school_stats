@@ -32,7 +32,7 @@ Added a full **Compare Schools** tab alongside the existing Explorer and Borough
 
 ---
 
-## What Was Done (This Session — 2026-03-01)
+## What Was Done (Session 3 — 2026-03-01)
 
 ### 3. Nearby Schools Tab
 
@@ -79,14 +79,36 @@ Tabs:
 3. **Sixth Form (KS5)** — search/filter/sort all KS5 schools
 4. **Boroughs** — borough-level average cards
 5. **Compare Schools** — side-by-side metric comparison
-6. **Nearby Schools** — postcode proximity search ← new this session
+6. **Nearby Schools** — postcode proximity search + interactive map
 
 ---
 
-## Commits This Session
+### 4. Interactive Map in Nearby Schools Tab
+
+**Commit**: `15bb526`
+
+Added a **Leaflet.js + OpenStreetMap** map below the Nearby Schools results table.
+
+**Features:**
+- Red circle marker for the searched postcode
+- Coloured circle markers for each of the 10 nearest schools: green = KS2, blue = KS4, orange = KS5
+- Click any marker for a popup showing school name, phase and distance
+- Map auto-fits bounds to include all 11 markers with padding
+- Uses Leaflet 1.9.4 from CDN + OpenStreetMap tiles — no API key required
+- Map is lazily initialised on first search; `invalidateSize()` called after display to handle hidden-container sizing
+
+**Files changed:**
+| File | Change |
+|---|---|
+| `generate_report.py` | Leaflet CDN tags in `<head>`, `.nearby-map` CSS, map div in panel, map rendering in `searchNearby()` |
+
+---
+
+## Commits
 
 | Hash | Message |
 |---|---|
+| `15bb526` | Add interactive map to Nearby Schools tab (Leaflet + OpenStreetMap) |
 | `f50fab1` | Add address and postcode to Nearby Schools results |
 | `46a3fc9` | Fix proximity search accuracy: use precise full-postcode geocoding |
 | `301b70a` | Add Nearby Schools tab with postcode proximity search |
