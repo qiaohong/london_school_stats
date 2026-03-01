@@ -1,6 +1,6 @@
 # School Selector — Handoff 2
 **Date**: 2026-03-01
-**Status**: Website fully updated and pushed to gh-pages. Compare Schools and Nearby Schools tabs live.
+**Status**: Website fully updated and pushed to gh-pages. All tabs live including Appendix.
 
 ---
 
@@ -79,7 +79,8 @@ Tabs:
 3. **Sixth Form (KS5)** — search/filter/sort all KS5 schools
 4. **Boroughs** — borough-level average cards
 5. **Compare Schools** — side-by-side metric comparison
-6. **Nearby Schools** — postcode proximity search + interactive map
+6. **Nearby Schools** — postcode + radius + filter search with interactive map
+7. **Appendix** — score methodology, data sources, known limitations
 
 ---
 
@@ -108,6 +109,13 @@ Added a **Leaflet.js + OpenStreetMap** map below the Nearby Schools results tabl
 
 | Hash | Message |
 |---|---|
+| `6164061` | Add Appendix tab: score methodology, data sources, known limitations |
+| `71ea585` | Fix Ofsted data: query non-null rows separately to avoid null year override |
+| `944cf5b` | Add Ofsted rating/year, admissions filter, SCHOOLTYPE column, data disclaimer |
+| `c29f233` | Nearby Schools: add school type multi-select filter |
+| `a564d15` | Fix phase checkbox styling: remove padding bleed, group labels |
+| `98ec248` | Nearby Schools: radius + phase filter, cap at 5km/50 schools |
+| `40410f9` | Fix map: offset coincident markers so all 10 schools are visible |
 | `15bb526` | Add interactive map to Nearby Schools tab (Leaflet + OpenStreetMap) |
 | `f50fab1` | Add address and postcode to Nearby Schools results |
 | `46a3fc9` | Fix proximity search accuracy: use precise full-postcode geocoding |
@@ -122,7 +130,7 @@ Branch: `gh-pages` (deployment branch — pushing here triggers GitHub Pages)
 
 ```
 london_school_stats/
-├── report.html          ← live website, ~1.3 MB, self-contained
+├── report.html          ← live website, ~1.7 MB, self-contained
 ├── generate_report.py   ← Step 4: regenerate HTML from DB (owns the HTML template)
 ├── compute_metrics.py   ← Step 3: compute composite scores
 ├── load_data.py         ← Step 1: load DfE CSVs into SQLite
@@ -155,6 +163,52 @@ venv2/bin/python load_data.py       # ~1 min
 venv2/bin/python compute_metrics.py # ~30 sec
 venv2/bin/python generate_report.py # ~30 sec (includes geocoding)
 ```
+
+---
+
+---
+
+## What Was Done (Session 4 — 2026-03-01)
+
+### 5. Nearby Schools — Radius + Phase + Type + Admissions Filters
+
+Replaced fixed "nearest 10" with a fully configurable search:
+
+| Control | Detail |
+|---|---|
+| Postcode input | Unchanged — full postcode or outward code |
+| Radius | Number input, 0.1–5 km, default 1 km |
+| Phase checkboxes | Primary (KS2), Secondary (KS4), Sixth Form (KS5) — multi-select |
+| Type checkboxes | Maintained, Academy, Independent, Special, College — multi-select |
+| Admissions checkboxes | Selective, Non-selective — "Not applicable"/null treated as non-selective |
+| Cap | 50 results maximum; status line notes "(capped at 50)" if hit |
+
+Results sorted closest to furthest. Empty result shows a helpful message rather than blank table.
+
+### 6. Map Bug Fix — Coincident Markers
+
+Schools sharing the same postcode had identical lat/lng, causing markers to stack (only topmost visible). Fix: before rendering, group markers by coordinate; if >1 school at the same point, fan them out in a small circle (~30 m radius) so all are individually visible and clickable.
+
+### 7. Ofsted Rating + Inspection Year in Nearby Table
+
+- `OFSTEDRATING` and `OFSTEDLASTINSP` joined from `schools` table via a separate deduplication query that filters `WHERE OFSTEDRATING IS NOT NULL` — necessary because 2023-24 and 2024-25 DfE school info files dropped those columns entirely, so sorting by latest year first returned nulls.
+- Coverage: ~96% of schools (2,688 of ~2,800 in scope).
+- Displayed in the Nearby table with colour coding: green = Outstanding, blue = Good, amber = Requires improvement, red = Inadequate/Special Measures. Inspection year shown below the rating.
+
+### 8. SCHOOLTYPE + ADMPOL Added to Exports
+
+`SCHOOLTYPE` (22 granular subtypes, e.g. *Academy converter*, *Free schools*) and `ADMPOL` (Selective / Non-selective / Not applicable) added to `KS2_COLS`, `KS4_COLS`, `KS5_COLS`. Nearby table now shows `SCHOOLTYPE` as the "Type" column instead of the broader `MINORGROUP`.
+
+### 9. Data Disclaimer
+
+Small grey footer added to the bottom of every page: notes that performance figures and Ofsted ratings may lag, with links to gov.uk performance tables and reports.ofsted.gov.uk.
+
+### 10. Appendix Tab
+
+New tab with three sections:
+- **Composite Score** — explains percentile-ranking approach; per-phase table of components, descriptions, and weights; caveats on the methodology
+- **Data Sources** — lists all DfE datasets, Ofsted source, postcodes.io
+- **Known Limitations** — P8 lag, KS2 progress suspension, destinations lag, suppression markers, Ofsted staleness
 
 ---
 
