@@ -26,24 +26,28 @@
 ## Outstanding Bug: Rightmove URL
 
 ### Symptoms
-The Rightmove button in Step 5 opens a URL that does not land on the correct search results page. Two attempts were made:
+The Rightmove button in Step 5 still does not land on the correct search results page. Three attempts made, all unsuccessful.
 
-**Attempt 1** (previous session): Changed from `/in-{outcode}.html` to `find.html?locationIdentifier=OUTCODE^{outcode}`. The `^` was being URL-encoded as `%5E` by `urlencode`, which Rightmove rejects.
+### Attempts so far
 
-**Attempt 2** (this session): Built the `locationIdentifier` segment manually to keep the literal `^`:
+**Attempt 1**: `/in-{outcode}.html` — redirected to homepage, ignored params.
+
+**Attempt 2**: `find.html?locationIdentifier=OUTCODE^{outcode}` — `OUTCODE` prefix with text outcode is not a valid Rightmove identifier format.
+
+**Attempt 3** (2026-03-01): Rewrote `utils/rightmove.py` to call Rightmove's typeahead API (`api.rightmove.co.uk/api/typeAhead/v1/autocomplete`) to resolve postcode → numeric ID, then build `POSTCODE%5E{numeric_id}` URL. URL format was confirmed correct from a real browser URL (`N1C 4DB` → `POSTCODE^4554477`). Still not working — suspected the typeahead API call is failing silently and the fallback bare-`searchLocation` URL is being used instead.
+
+### What a working URL looks like (captured from browser)
 ```
-find.html?locationIdentifier=OUTCODE^N8&radius=1.0&sortType=6&includeSSTC=false
+https://www.rightmove.co.uk/property-for-sale/find.html?searchLocation=N1C+4DB&useLocationIdentifier=true&locationIdentifier=POSTCODE%5E4554477&radius=0.5&_includeSSTC=on
 ```
-This URL format looks correct in the terminal, but the user reports it still doesn't work in the browser. Root cause not yet confirmed.
 
-### Possible next steps to debug
-1. **Check if Rightmove uses a numeric location ID** — the `OUTCODE^N8` format may only work if Rightmove can resolve it. Try generating the URL manually in a browser and inspect the network request Rightmove makes after you search normally (DevTools → Network → look for `locationIdentifier` in the `find.html` request).
-2. **Try `REGION^N8` or `STATION^...`** — Rightmove has multiple identifier prefixes. `OUTCODE` may not be the right one.
-3. **Intercept a real search URL** — search on Rightmove for an outcode, copy the URL from the browser address bar, and compare it to what the app generates.
-4. **Fallback**: if the API-style URL cannot be made to work reliably, fall back to the browse URL format: `https://www.rightmove.co.uk/property-for-sale/find.html?searchType=SALE&locationIdentifier=OUTCODE%5EN8` (some users report this works with `%5E` not `^`).
+### Next steps
+1. **Check if typeahead API call is actually succeeding** — add a `st.write(loc_id)` debug line in step5 to print the resolved `locationIdentifier`. If it's `None`, the API is failing.
+2. **If API fails**: the `api.rightmove.co.uk` host may block non-browser requests. Try adding more browser-like headers (`Accept`, `Referer`, `Accept-Language`) or use a different endpoint.
+3. **Alternative**: hardcode a lookup table of London postcode → numeric ID (scraped once), bypassing the live API entirely.
 
 ### Relevant file
-`utils/rightmove.py` — `build_url()` function, line 35.
+`utils/rightmove.py` — `_resolve_location_identifier()` and `build_url()`.
 
 ---
 

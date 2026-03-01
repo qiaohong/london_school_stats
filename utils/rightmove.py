@@ -2,18 +2,19 @@
 Rightmove URL builder.
 
 URL strategy:
-  Rightmove's /in-{outcode}.html is an SEO browse page that does not
-  reliably process query parameters — hence the redirect to home page.
-  The correct search endpoint is /property-for-sale/find.html with a
-  locationIdentifier. Since Rightmove's autocomplete API returns 404,
-  we use the outcode text directly in the locationIdentifier field.
-  This resolves correctly for all standard London outcodes.
+  Rightmove requires a numeric locationIdentifier of the form POSTCODE^{id}.
+  We resolve this by calling Rightmove's typeahead API with the postcode.
+  If the API call fails, we fall back to a bare searchLocation URL which
+  lets the user at least land on the right page and re-run the search.
 
-  Format: find.html?locationIdentifier=OUTCODE%5E{OUTCODE}&radius=...
-  %5E = ^ (caret), which Rightmove uses as a prefix separator.
+  Real URL example (N1C 4DB, 0.5 mile):
+    find.html?searchLocation=N1C+4DB&useLocationIdentifier=true
+             &locationIdentifier=POSTCODE%5E4554477&radius=0.5&_includeSSTC=on
 """
 
-from urllib.parse import urlencode, quote
+import requests
+from functools import lru_cache
+from urllib.parse import urlencode
 
 # Rightmove supported radius values (miles)
 _RM_RADII = [0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0]
@@ -27,9 +28,27 @@ def _km_to_miles(km: float) -> float:
     return km * 0.621371
 
 
-def _postcode_to_outcode(postcode: str) -> str:
-    """Extract outcode (uppercase) from a full UK postcode. E.g. 'N8 9DP' → 'N8'."""
-    return postcode.strip().split()[0].upper()
+@lru_cache(maxsize=256)
+def _resolve_location_identifier(postcode: str) -> str | None:
+    """Call Rightmove's typeahead API to get a numeric locationIdentifier.
+
+    Returns e.g. 'POSTCODE^4554477', or None if the call fails.
+    """
+    try:
+        resp = requests.get(
+            "https://api.rightmove.co.uk/api/typeAhead/v1/autocomplete",
+            params={"query": postcode, "limit": 5},
+            timeout=5,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.ok:
+            for loc in resp.json().get("typeAheadLocations", []):
+                loc_id = loc.get("locationIdentifier", "")
+                if loc_id.startswith("POSTCODE^"):
+                    return loc_id
+    except Exception:
+        pass
+    return None
 
 
 def build_url(
@@ -41,12 +60,8 @@ def build_url(
 ) -> str:
     """
     Build a Rightmove search URL near the given school postcode.
-
-    Uses find.html with locationIdentifier=OUTCODE^{outcode} so that
-    Rightmove's search engine resolves the area correctly and applies
-    radius/price filters.
     """
-    outcode = _postcode_to_outcode(postcode)
+    postcode = postcode.strip().upper()
     path = "property-for-sale" if listing_type == "sale" else "property-to-rent"
 
     if cutoff_km is not None:
@@ -56,16 +71,36 @@ def build_url(
 
     radius = _nearest_rm_radius(target_miles)
 
-    other_params: dict = {"radius": radius, "sortType": 6, "includeSSTC": "false"}
-    if max_price:
-        other_params["maxPrice"] = max_price
-    if min_bedrooms:
-        other_params["minBedrooms"] = min_bedrooms
+    loc_id = _resolve_location_identifier(postcode)
 
-    # locationIdentifier must contain a literal ^ — urlencode would encode it as %5E
-    # which Rightmove does not accept, so we prepend it manually.
-    query = f"locationIdentifier=OUTCODE^{outcode}&{urlencode(other_params)}"
-    return f"https://www.rightmove.co.uk/{path}/find.html?{query}"
+    if loc_id:
+        # loc_id is e.g. "POSTCODE^4554477" — urlencode will encode ^ as %5E, which
+        # is exactly what Rightmove expects.
+        params: dict = {
+            "searchLocation": postcode,
+            "useLocationIdentifier": "true",
+            "locationIdentifier": loc_id,
+            "radius": radius,
+            "_includeSSTC": "on",
+        }
+        if max_price:
+            params["maxPrice"] = max_price
+        if min_bedrooms:
+            params["minBedrooms"] = min_bedrooms
+    else:
+        # Fallback: bare searchLocation — user lands on search page with postcode
+        # pre-filled and can hit Search manually.
+        params = {
+            "searchLocation": postcode,
+            "radius": radius,
+            "_includeSSTC": "on",
+        }
+        if max_price:
+            params["maxPrice"] = max_price
+        if min_bedrooms:
+            params["minBedrooms"] = min_bedrooms
+
+    return f"https://www.rightmove.co.uk/{path}/find.html?{urlencode(params)}"
 
 
 def describe_radius(cutoff_km: float | None) -> str:
