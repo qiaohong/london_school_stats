@@ -1,0 +1,9 @@
+venv/
+data/
+schools.db
+schools.db-shm
+schools.db-wal
+._*
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,40 +1,20 @@
-You should collect information about primary schools and secondary schools from ofsted website. focus on London and surrounding commuter towns (e.g. Surrey)
+Collect the information, clean the data, compute interesting data points and comparisons, then display the results on a webpage. This is a step by step guide. 
 
-collect all the information you can find from ofsted. collect metadata as well and store the data in line with best practices of relational databases and use metadata to make the fields easy to understand.
 
----
+1. Collect the information.
+Visit this url https://www.compare-school-performance.service.gov.uk/download-data
+Download the data for the last 5 academic years, for all of England, select all data types available. 
+Download all the data. Also download the explanation of terminology. 
 
-## Data sources
+describe what's in each of the downloaded file. refer to the metadata where it's helpful. discuss with me on what to use for step 2. 
 
-All files are downloaded automatically by the pipeline scripts except where noted.
+2. Clean the data
+Review the content of the data model (that contains London data only). Look at null values, outliners and make reference to the metadata to spot any other oddities. Raise those with me and we will discuss how to clean the data. 
 
-| Dataset | Source page | Direct download URL |
-|---------|-------------|---------------------|
-| Ofsted latest inspections (monthly CSV) | https://www.gov.uk/government/statistical-data-sets/monthly-management-information-ofsteds-school-inspections-outcomes | Auto-detected by `fetch_ofsted_data.py` (scrapes the page for the latest CSV link) |
-| KS2 attainment 2024/25 (primary) | https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/b361b4c3-21b9-46fd-9126-b8060c6a40e2 | `https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/b361b4c3-21b9-46fd-9126-b8060c6a40e2/csv` |
-| KS4 performance 2023/24 (secondary) | https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/c8f753ef-b76f-41a3-8949-13382e131054 | `https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/c8f753ef-b76f-41a3-8949-13382e131054/csv` |
-| Pupil absence 2023/24 | https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/1ef1689a-070a-4e0b-9314-512db23a3cc9 | `https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/1ef1689a-070a-4e0b-9314-512db23a3cc9/csv` |
-| Exclusions & suspensions 2023/24 | https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/6ffc5087-5f61-47a1-9086-d1c374039d1b | `https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/6ffc5087-5f61-47a1-9086-d1c374039d1b/csv` |
-| School applications & offers 2024/25 | https://explore-education-statistics.service.gov.uk (school-level file) | **Manually downloaded** — saved as `data/AppsandOffers_2024_SchoolLevel.csv` |
+3. Compute interesting data points and comparisons
+Make suggestions. 
 
----
+4. display the results on a webpage
+Rewrite this url 
+https://qiaohong.github.io/school-report/report.html
 
-## Report webpage
-
-Live URL: https://qiaohong.github.io/school-report/report.html
-
-The report is a self-contained HTML file generated from the SQLite database and hosted on GitHub Pages.
-
-### How to update the webpage
-
-```bash
-cd "/root/my-vault/school selector"
-
-# 1. Regenerate the HTML from the latest database
-venv/bin/python generate_report.py
-
-# 2. Commit and push — GitHub Pages updates within ~1 minute
-git add report.html
-git commit -m "Update report"
-git push
-```
