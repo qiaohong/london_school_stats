@@ -846,13 +846,25 @@ async function searchNearby() {
     .slice(0, 10);
 
   status.textContent = `10 nearest schools to ${rawPc.toUpperCase()}`;
+
+  function fmtAddr(d) {
+    const parts = [d.STREET, d.LOCALITY].filter(Boolean);
+    const street = parts.join(', ');
+    const pc = d.POSTCODE || '';
+    if (!street && !pc) return '\u2014';
+    if (!street) return `<span style="color:#555;font-size:12px;">${pc}</span>`;
+    return `<span style="font-size:12px;">${street}</span>`
+         + (pc ? `<br><span style="color:#888;font-size:11px;">${pc}</span>` : '');
+  }
+
   resultsEl.innerHTML = `<div class="tbl-wrap"><table>
     <thead><tr>
-      <th>School</th><th>Borough</th><th>Type</th><th>Phase</th>
+      <th>School</th><th>Address</th><th>Borough</th><th>Type</th><th>Phase</th>
       <th class="num">Distance</th><th class="num">Score</th>
     </tr></thead>
     <tbody>${nearest.map(d => `<tr>
       <td>${d.SCHNAME || '\u2014'}</td>
+      <td>${fmtAddr(d)}</td>
       <td>${d.LANAME  || '\u2014'}</td>
       <td>${d.MINORGROUP || '\u2014'}</td>
       <td><span class="phase-badge phase-${d._phaseKey}">${d._phaseLabel}</span></td>
@@ -903,19 +915,19 @@ async function searchNearby() {
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-KS2_COLS = ["SCHNAME", "LANAME", "MINORGROUP", "data_year",
+KS2_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "data_year",
             "total_pupils", "pct_rwm_expected", "pct_rwm_high",
             "avg_progress", "absence_pct", "pct_fsm", "rwm_trend", "composite_score",
             "POSTCODE"]
 
-KS4_COLS = ["SCHNAME", "LANAME", "MINORGROUP", "data_year",
+KS4_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "data_year",
             "ks4_cohort", "progress8", "attainment8",
             "pct_grade5_eng_maths", "pct_ebacc_4plus",
             "dest_pct_education", "absence_pct",
             "p8_trend", "punching_above_weight", "composite_score",
             "POSTCODE"]
 
-KS5_COLS = ["SCHNAME", "LANAME", "MINORGROUP", "data_year",
+KS5_COLS = ["URN", "SCHNAME", "LANAME", "MINORGROUP", "data_year",
             "alevel_cohort", "alevel_value_added",
             "pct_aab_facilitating", "dest_pct_he",
             "absence_pct", "va_trend", "composite_score",
@@ -930,9 +942,23 @@ def main():
     ks4 = load(conn, "metrics_ks4", KS4_COLS)
     ks5 = load(conn, "metrics_ks5", KS5_COLS)
     la  = load(conn, "metrics_la")
+
+    # Address lookup: one row per URN (latest year available)
+    addr = load(conn, "schools", ["URN", "STREET", "LOCALITY", "TOWN"])
+    addr = addr.drop_duplicates("URN")
+
     conn.close()
 
     print(f"  KS2: {len(ks2):,} rows, KS4: {len(ks4):,} rows, KS5: {len(ks5):,} rows, LA: {len(la):,} rows")
+
+    # Merge address fields into each phase dataframe via URN, then drop URN
+    for df in (ks2, ks4, ks5):
+        merged = df.merge(addr, on="URN", how="left")
+        df["STREET"]   = merged["STREET"].values
+        df["LOCALITY"] = merged["LOCALITY"].values
+    ks2.drop(columns=["URN"], inplace=True)
+    ks4.drop(columns=["URN"], inplace=True)
+    ks5.drop(columns=["URN"], inplace=True)
 
     # ── Geocode postcodes via postcodes.io bulk API ────────────────────────────
     # Uses full postcodes for precise coordinates (~10m accuracy vs district
