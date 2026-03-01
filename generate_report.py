@@ -11,6 +11,7 @@ import os
 import sqlite3
 
 import pandas as pd
+import pgeocode
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH  = os.path.join(BASE_DIR, "schools.db")
@@ -155,6 +156,52 @@ td { padding: 7px 10px; vertical-align: top; }
 
 /* ── Data note ── */
 .data-note { font-size: 11px; color: #888; margin-top: 8px; }
+
+/* ── Compare ── */
+.compare-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.compare-search-wrap { position: relative; }
+.compare-search-wrap input { width: 280px; padding: 7px 11px; border: 1px solid #c8d0da; border-radius: 6px; font-size: 13px; }
+.school-dropdown { position: absolute; top: calc(100% + 4px); left: 0; z-index: 200;
+  background: white; border: 1px solid #c8d0da; border-radius: 6px; max-height: 240px;
+  overflow-y: auto; width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); display: none; }
+.school-dropdown.open { display: block; }
+.school-dropdown-item { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f0f3f7; }
+.school-dropdown-item:last-child { border-bottom: none; }
+.school-dropdown-item:hover:not(.disabled) { background: #f0f3f7; }
+.school-dropdown-item.disabled { color: #bbb; cursor: default; background: #fafafa; }
+.cmp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; min-height: 28px; }
+.chip-school { display: inline-flex; align-items: center; gap: 5px; background: #dde4ec;
+  color: #1a3a5c; padding: 4px 10px; border-radius: 14px; font-size: 12px; font-weight: 500; }
+.chip-school button { background: none; border: none; cursor: pointer; color: #7a8a9a;
+  font-size: 15px; line-height: 1; padding: 0; }
+.chip-school button:hover { color: #c0392b; }
+.btn-clear-all { padding: 7px 16px; background: #f8d7da; color: #7c1d20; border: 1px solid #f5c6cb;
+  border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn-clear-all:hover { background: #f5c6cb; }
+.compare-empty { color: #888; font-style: italic; font-size: 13px; padding: 12px 0; }
+.compare-tbl-wrap { overflow-x: auto; }
+.compare-tbl { border-collapse: collapse; font-size: 13px; }
+.compare-tbl th { background: #f0f3f7; font-weight: 600; color: #1a3a5c;
+  padding: 9px 14px; white-space: nowrap; border-bottom: 2px solid #c8d0da;
+  border-right: 1px solid #dde4ec; text-align: left; }
+.compare-tbl th:last-child { border-right: none; }
+.compare-tbl td { padding: 7px 14px; border-bottom: 1px solid #edf0f5;
+  border-right: 1px solid #edf0f5; vertical-align: middle; }
+.compare-tbl td:last-child { border-right: none; }
+.compare-tbl tbody tr:hover td { background: #f7f9fc; }
+.compare-tbl .metric-label { color: #555; font-size: 12px; white-space: nowrap; font-weight: 600; }
+.compare-tbl .school-col-hdr { min-width: 160px; max-width: 220px; word-break: break-word; white-space: normal; }
+
+/* ── Nearby search ── */
+.btn-search { padding: 7px 16px; background: #1a3a5c; color: white; border: none;
+              border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn-search:hover { background: #2a5080; }
+.phase-badge { display:inline-block; padding:2px 8px; border-radius:12px;
+               font-size:11px; font-weight:600; white-space:nowrap; }
+.phase-ks2 { background:#e8f4e8; color:#1a6b1a; }
+.phase-ks4 { background:#e8eef8; color:#1a3a8c; }
+.phase-ks5 { background:#f8f0e8; color:#8c4a1a; }
+.nearby-empty { padding:32px; text-align:center; color:#888; font-size:14px; }
 </style>
 </head>
 <body>
@@ -169,6 +216,8 @@ td { padding: 7px 10px; vertical-align: top; }
     <button class="tab" onclick="showTab('ks4')">Secondary (KS4)</button>
     <button class="tab" onclick="showTab('ks5')">Sixth Form (KS5)</button>
     <button class="tab" onclick="showTab('boroughs')">Boroughs</button>
+    <button class="tab" onclick="showTab('compare')">Compare Schools</button>
+    <button class="tab" onclick="showTab('nearby')">Nearby Schools</button>
   </div>
 
   <!-- ── KS2 panel ── -->
@@ -289,6 +338,39 @@ td { padding: 7px 10px; vertical-align: top; }
         </select>
       </div>
       <div class="la-grid" id="la-grid"></div>
+    </div>
+  </div>
+
+  <!-- ── Compare panel ── -->
+  <div id="tab-compare" class="panel">
+    <div class="panel-inner">
+      <div class="compare-controls">
+        <select id="cmp-phase" onchange="comparePhaseChange()">
+          <option value="KS4">Secondary (KS4)</option>
+          <option value="KS2">Primary (KS2)</option>
+          <option value="KS5">Sixth Form (KS5)</option>
+        </select>
+        <div class="compare-search-wrap">
+          <input type="text" id="cmp-search" placeholder="Search and add a school…" oninput="filterCompareDropdown()" autocomplete="off">
+          <div class="school-dropdown" id="cmp-dropdown"></div>
+        </div>
+        <button class="btn-clear-all" onclick="clearCompare()">Clear all</button>
+      </div>
+      <div class="cmp-chips" id="cmp-chips"></div>
+      <div id="cmp-table-wrap"><p class="compare-empty">Search for schools above and add them to compare side by side.</p></div>
+    </div>
+  </div>
+
+  <!-- ── Nearby Schools panel ── -->
+  <div id="tab-nearby" class="panel">
+    <div class="panel-inner">
+      <div class="filters">
+        <input type="text" id="nearby-postcode" placeholder="Enter a UK postcode (e.g. SW1A or EC2Y 8BB)…"
+               style="width:320px" autocomplete="off" onkeydown="if(event.key==='Enter')searchNearby()">
+        <button class="btn-search" onclick="searchNearby()">Find nearest schools</button>
+        <span class="filter-count" id="nearby-status"></span>
+      </div>
+      <div id="nearby-results"><p class="nearby-empty">Enter a postcode above to find the nearest schools.</p></div>
     </div>
   </div>
 
@@ -568,6 +650,217 @@ function renderLA() {
   }).join('');
 }
 
+// ── Compare Schools ────────────────────────────────────────────────────────────
+const compareState = { phase: 'KS4', selected: [] };
+let _cmpMatches = [];
+
+function getCompareData() {
+  if (compareState.phase === 'KS2') return DATA_KS2;
+  if (compareState.phase === 'KS5') return DATA_KS5;
+  return DATA_KS4;
+}
+
+function comparePhaseChange() {
+  compareState.phase = document.getElementById('cmp-phase').value;
+  compareState.selected = [];
+  renderCompareChips();
+  renderCompareTable();
+  document.getElementById('cmp-search').value = '';
+  document.getElementById('cmp-dropdown').classList.remove('open');
+}
+
+function filterCompareDropdown() {
+  const q  = document.getElementById('cmp-search').value.toLowerCase();
+  const dd = document.getElementById('cmp-dropdown');
+  if (!q) { dd.classList.remove('open'); return; }
+  _cmpMatches = getCompareData()
+    .filter(d => (d.SCHNAME || '').toLowerCase().includes(q))
+    .slice(0, 30);
+  if (!_cmpMatches.length) {
+    dd.innerHTML = '<div class="school-dropdown-item disabled">No schools found</div>';
+    dd.classList.add('open');
+    return;
+  }
+  dd.innerHTML = _cmpMatches.map((d, i) => {
+    const already = compareState.selected.some(s => s.SCHNAME === d.SCHNAME && s.LANAME === d.LANAME);
+    return `<div class="school-dropdown-item${already ? ' disabled' : ''}" data-idx="${i}">
+      ${d.SCHNAME || '—'} <span style="color:#888;font-size:11px;">(${d.LANAME || ''})</span>
+    </div>`;
+  }).join('');
+  dd.classList.add('open');
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.compare-search-wrap')) {
+    const dd = document.getElementById('cmp-dropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
+
+function removeCompareSchool(idx) {
+  compareState.selected.splice(idx, 1);
+  renderCompareChips();
+  renderCompareTable();
+}
+
+function clearCompare() {
+  compareState.selected = [];
+  renderCompareChips();
+  renderCompareTable();
+}
+
+function renderCompareChips() {
+  document.getElementById('cmp-chips').innerHTML = compareState.selected.map((s, i) =>
+    `<span class="chip-school">${s.SCHNAME || '—'}<button onclick="removeCompareSchool(${i})" title="Remove">×</button></span>`
+  ).join('');
+}
+
+function renderCompareTable() {
+  const sel = compareState.selected;
+  const el  = document.getElementById('cmp-table-wrap');
+  if (!sel.length) {
+    el.innerHTML = '<p class="compare-empty">Search for schools above and add them to compare side by side.</p>';
+    return;
+  }
+  const phase = compareState.phase;
+  let metrics;
+  if (phase === 'KS2') {
+    metrics = [
+      { label: 'Borough',        fn: d => d.LANAME || '—' },
+      { label: 'Type',           fn: d => d.MINORGROUP || '—' },
+      { label: 'Pupils',         fn: d => d.total_pupils != null ? d.total_pupils : '<span class="na">—</span>' },
+      { label: 'RWM Expected %', fn: d => fmtPct(d.pct_rwm_expected) },
+      { label: 'RWM Higher %',   fn: d => fmtPct(d.pct_rwm_high) },
+      { label: 'Avg Progress',   fn: d => fmtN(d.avg_progress, 2) },
+      { label: 'Absence %',      fn: d => fmtPct(d.absence_pct) },
+      { label: 'FSM %',          fn: d => fmtPct(d.pct_fsm) },
+      { label: 'Trend',          fn: d => trendArrow(d.rwm_trend, 1) },
+      { label: 'Score',          fn: d => scoreChip(d.composite_score) },
+      { label: 'Data year',      fn: d => fmtYr(d.data_year) },
+    ];
+  } else if (phase === 'KS4') {
+    metrics = [
+      { label: 'Borough',          fn: d => d.LANAME || '—' },
+      { label: 'Type',             fn: d => d.MINORGROUP || '—' },
+      { label: 'Cohort',           fn: d => d.ks4_cohort != null ? d.ks4_cohort : '<span class="na">—</span>' },
+      { label: 'Progress 8',       fn: d => fmtN(d.progress8, 2) },
+      { label: 'Attainment 8',     fn: d => fmtN(d.attainment8, 1) },
+      { label: 'Grade 5+ E&amp;M %',   fn: d => fmtPct(d.pct_grade5_eng_maths) },
+      { label: 'EBacc 4+ %',       fn: d => fmtPct(d.pct_ebacc_4plus) },
+      { label: 'Destinations %',   fn: d => fmtPct(d.dest_pct_education) },
+      { label: 'Absence %',        fn: d => fmtPct(d.absence_pct) },
+      { label: 'P8 Trend',         fn: d => p8Arrow(d.p8_trend) },
+      { label: 'Score',            fn: d => scoreChip(d.composite_score) },
+      { label: 'Data year',        fn: d => fmtYr(d.data_year) },
+    ];
+  } else {
+    metrics = [
+      { label: 'Borough',         fn: d => d.LANAME || '—' },
+      { label: 'Type',            fn: d => d.MINORGROUP || '—' },
+      { label: 'A-level cohort',  fn: d => d.alevel_cohort != null ? d.alevel_cohort : '<span class="na">—</span>' },
+      { label: 'Value Added',     fn: d => vaScore(d.alevel_value_added) },
+      { label: 'AAB Facil. %',    fn: d => fmtPct(d.pct_aab_facilitating) },
+      { label: 'HE Dest. %',      fn: d => fmtPct(d.dest_pct_he) },
+      { label: 'Absence %',       fn: d => fmtPct(d.absence_pct) },
+      { label: 'VA Trend',        fn: d => vaArrow(d.va_trend) },
+      { label: 'Score',           fn: d => scoreChip(d.composite_score) },
+      { label: 'Data year',       fn: d => fmtYr(d.data_year) },
+    ];
+  }
+
+  const headerCols = sel.map(s =>
+    `<th class="school-col-hdr">${s.SCHNAME || '—'}<br><span style="font-weight:400;color:#888;font-size:11px;">${s.LANAME || ''}</span></th>`
+  ).join('');
+  const bodyRows = metrics.map(m =>
+    `<tr><td class="metric-label">${m.label}</td>${sel.map(s => `<td>${m.fn(s)}</td>`).join('')}</tr>`
+  ).join('');
+
+  el.innerHTML = `<div class="compare-tbl-wrap">
+    <table class="compare-tbl">
+      <thead><tr><th>Metric</th>${headerCols}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </div>`;
+}
+
+// ── Nearby Schools ──────────────────────────────────────────────────────────────
+
+const DATA_NEARBY = (() => {
+  const out = [];
+  for (const [phaseKey, phaseLabel, data] of [
+    ['ks2', 'Primary (KS2)',    DATA_KS2],
+    ['ks4', 'Secondary (KS4)', DATA_KS4],
+    ['ks5', 'Sixth Form (KS5)',DATA_KS5]
+  ]) {
+    for (const d of data) {
+      if (d.lat == null || d.lng == null) continue;
+      out.push({ ...d, _phaseKey: phaseKey, _phaseLabel: phaseLabel });
+    }
+  }
+  return out;
+})();
+
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function searchNearby() {
+  const rawPc  = document.getElementById('nearby-postcode').value.trim();
+  const status = document.getElementById('nearby-status');
+  const resultsEl = document.getElementById('nearby-results');
+  if (!rawPc) return;
+
+  status.textContent = 'Searching\u2026';
+  resultsEl.innerHTML = '';
+
+  const clean = rawPc.toUpperCase().replace(/\s+/g, '');
+  let lat = null, lng = null;
+  try {
+    let r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
+    let j = await r.json();
+    if (j.status === 200) { lat = j.result.latitude; lng = j.result.longitude; }
+    else {
+      r = await fetch(`https://api.postcodes.io/outcodes/${encodeURIComponent(clean)}`);
+      j = await r.json();
+      if (j.status === 200) { lat = j.result.latitude; lng = j.result.longitude; }
+    }
+  } catch(e) {
+    status.textContent = 'Could not reach postcodes.io \u2014 check your connection.';
+    return;
+  }
+
+  if (lat == null) {
+    status.textContent = `Postcode "${rawPc}" not found.`;
+    return;
+  }
+
+  const nearest = DATA_NEARBY
+    .map(d => ({ ...d, _dist: haversine(lat, lng, d.lat, d.lng) }))
+    .sort((a, b) => a._dist - b._dist)
+    .slice(0, 10);
+
+  status.textContent = `10 nearest schools to ${rawPc.toUpperCase()}`;
+  resultsEl.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr>
+      <th>School</th><th>Borough</th><th>Type</th><th>Phase</th>
+      <th class="num">Distance</th><th class="num">Score</th>
+    </tr></thead>
+    <tbody>${nearest.map(d => `<tr>
+      <td>${d.SCHNAME || '\u2014'}</td>
+      <td>${d.LANAME  || '\u2014'}</td>
+      <td>${d.MINORGROUP || '\u2014'}</td>
+      <td><span class="phase-badge phase-${d._phaseKey}">${d._phaseLabel}</span></td>
+      <td class="num">${d._dist.toFixed(1)} km</td>
+      <td class="num">${scoreChip(d.composite_score)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 (function init() {
   populateSelects(DATA_KS2,
@@ -583,6 +876,23 @@ function renderLA() {
   renderKS4();
   renderKS5();
   renderLA();
+
+  // Compare dropdown — event delegation to handle school selection
+  document.getElementById('cmp-dropdown').addEventListener('click', function(e) {
+    const item = e.target.closest('.school-dropdown-item');
+    if (!item || item.classList.contains('disabled')) return;
+    const idx = parseInt(item.dataset.idx, 10);
+    if (isNaN(idx)) return;
+    const school = _cmpMatches[idx];
+    if (!school) return;
+    if (!compareState.selected.some(s => s.SCHNAME === school.SCHNAME && s.LANAME === school.LANAME)) {
+      compareState.selected.push(school);
+      renderCompareChips();
+      renderCompareTable();
+    }
+    document.getElementById('cmp-search').value = '';
+    document.getElementById('cmp-dropdown').classList.remove('open');
+  });
 })();
 </script>
 </body>
@@ -594,18 +904,21 @@ function renderLA() {
 
 KS2_COLS = ["SCHNAME", "LANAME", "MINORGROUP", "data_year",
             "total_pupils", "pct_rwm_expected", "pct_rwm_high",
-            "avg_progress", "absence_pct", "pct_fsm", "rwm_trend", "composite_score"]
+            "avg_progress", "absence_pct", "pct_fsm", "rwm_trend", "composite_score",
+            "POSTCODE"]
 
 KS4_COLS = ["SCHNAME", "LANAME", "MINORGROUP", "data_year",
             "ks4_cohort", "progress8", "attainment8",
             "pct_grade5_eng_maths", "pct_ebacc_4plus",
             "dest_pct_education", "absence_pct",
-            "p8_trend", "punching_above_weight", "composite_score"]
+            "p8_trend", "punching_above_weight", "composite_score",
+            "POSTCODE"]
 
 KS5_COLS = ["SCHNAME", "LANAME", "MINORGROUP", "data_year",
             "alevel_cohort", "alevel_value_added",
             "pct_aab_facilitating", "dest_pct_he",
-            "absence_pct", "va_trend", "composite_score"]
+            "absence_pct", "va_trend", "composite_score",
+            "POSTCODE"]
 
 
 def main():
@@ -619,6 +932,45 @@ def main():
     conn.close()
 
     print(f"  KS2: {len(ks2):,} rows, KS4: {len(ks4):,} rows, KS5: {len(ks5):,} rows, LA: {len(la):,} rows")
+
+    # ── Geocode postcodes ──────────────────────────────────────────────────────
+    # pgeocode for GB resolves outward codes (e.g. "EC2Y", "NW3") rather than
+    # full postcodes.  Extract unique outward codes and build a map.
+    print("Geocoding school postcodes…")
+    nomi = pgeocode.Nominatim('GB')
+
+    def outward(pc):
+        """Return the outward code (part before the space) of a UK postcode."""
+        if not pc:
+            return None
+        return pc.strip().split()[0].upper()
+
+    all_pcs = pd.concat([ks2['POSTCODE'], ks4['POSTCODE'], ks5['POSTCODE']]).dropna().unique()
+    outward_codes = list({outward(p) for p in all_pcs if outward(p)})
+    geo = nomi.query_postal_code(outward_codes)
+    geo_map = {}  # outward_code -> (lat, lng)
+    for _, row in geo.iterrows():
+        lat_v = row['latitude']
+        lng_v = row['longitude']
+        if pd.notnull(lat_v) and pd.notnull(lng_v):
+            geo_map[row['postal_code']] = (float(lat_v), float(lng_v))
+
+    def geo_lat(p):
+        if not isinstance(p, str):
+            return None
+        ow = outward(p)
+        return geo_map.get(ow, (None, None))[0]
+
+    def geo_lng(p):
+        if not isinstance(p, str):
+            return None
+        ow = outward(p)
+        return geo_map.get(ow, (None, None))[1]
+
+    for df in (ks2, ks4, ks5):
+        df['lat'] = df['POSTCODE'].map(geo_lat)
+        df['lng'] = df['POSTCODE'].map(geo_lng)
+    print(f"  Geocoded {len(geo_map):,} of {len(outward_codes):,} unique outward codes")
 
     html = HTML_TEMPLATE
     html = html.replace("__DATA_KS2__", df_to_json(ks2))
