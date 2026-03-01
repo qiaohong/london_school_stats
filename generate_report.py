@@ -369,13 +369,28 @@ td { padding: 7px 10px; vertical-align: top; }
   <!-- ── Nearby Schools panel ── -->
   <div id="tab-nearby" class="panel">
     <div class="panel-inner">
-      <div class="filters">
-        <input type="text" id="nearby-postcode" placeholder="Enter a UK postcode (e.g. SW1A or EC2Y 8BB)…"
-               style="width:320px" autocomplete="off" onkeydown="if(event.key==='Enter')searchNearby()">
-        <button class="btn-search" onclick="searchNearby()">Find nearest schools</button>
+      <div class="filters" style="flex-wrap:wrap;gap:10px 16px;">
+        <input type="text" id="nearby-postcode" placeholder="Postcode (e.g. SW1A or EC2Y 8BB)…"
+               style="width:260px" autocomplete="off" onkeydown="if(event.key==='Enter')searchNearby()">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+          Radius (km, max&nbsp;5):
+          <input type="number" id="nearby-radius" value="1" min="0.1" max="5" step="0.1"
+                 style="width:64px;padding:6px 8px;border:1px solid #c8d0da;border-radius:6px;font-size:13px;">
+        </label>
+        <span style="font-size:13px;font-weight:500;color:#444;">Phases:</span>
+        <label style="font-size:13px;display:flex;align-items:center;gap:4px;">
+          <input type="checkbox" id="nearby-ks2" checked> Primary (KS2)
+        </label>
+        <label style="font-size:13px;display:flex;align-items:center;gap:4px;">
+          <input type="checkbox" id="nearby-ks4" checked> Secondary (KS4)
+        </label>
+        <label style="font-size:13px;display:flex;align-items:center;gap:4px;">
+          <input type="checkbox" id="nearby-ks5" checked> Sixth Form (KS5)
+        </label>
+        <button class="btn-search" onclick="searchNearby()">Search</button>
         <span class="filter-count" id="nearby-status"></span>
       </div>
-      <div id="nearby-results"><p class="nearby-empty">Enter a postcode above to find the nearest schools.</p></div>
+      <div id="nearby-results"><p class="nearby-empty">Enter a postcode and radius above to find nearby schools.</p></div>
       <div id="nearby-map" class="nearby-map" style="display:none"></div>
     </div>
   </div>
@@ -845,12 +860,29 @@ async function searchNearby() {
     return;
   }
 
-  const nearest = DATA_NEARBY
-    .map(d => ({ ...d, _dist: haversine(lat, lng, d.lat, d.lng) }))
-    .sort((a, b) => a._dist - b._dist)
-    .slice(0, 10);
+  const radiusRaw = parseFloat(document.getElementById('nearby-radius').value) || 1;
+  const radius = Math.min(Math.max(radiusRaw, 0.1), 5);
+  const wantKS2 = document.getElementById('nearby-ks2').checked;
+  const wantKS4 = document.getElementById('nearby-ks4').checked;
+  const wantKS5 = document.getElementById('nearby-ks5').checked;
 
-  status.textContent = `10 nearest schools to ${rawPc.toUpperCase()}`;
+  if (!wantKS2 && !wantKS4 && !wantKS5) {
+    status.textContent = 'Please select at least one phase.';
+    return;
+  }
+
+  const nearest = DATA_NEARBY
+    .filter(d => (d._phaseKey === 'ks2' && wantKS2) ||
+                 (d._phaseKey === 'ks4' && wantKS4) ||
+                 (d._phaseKey === 'ks5' && wantKS5))
+    .map(d => ({ ...d, _dist: haversine(lat, lng, d.lat, d.lng) }))
+    .filter(d => d._dist <= radius)
+    .sort((a, b) => a._dist - b._dist)
+    .slice(0, 50);
+
+  status.textContent = nearest.length === 0
+    ? `No schools found within ${radius} km of ${rawPc.toUpperCase()}.`
+    : `${nearest.length} school${nearest.length > 1 ? 's' : ''} within ${radius} km of ${rawPc.toUpperCase()}${nearest.length === 50 ? ' (capped at 50)' : ''}`;
 
   function fmtAddr(d) {
     const parts = [d.STREET, d.LOCALITY].filter(Boolean);
@@ -860,6 +892,12 @@ async function searchNearby() {
     if (!street) return `<span style="color:#555;font-size:12px;">${pc}</span>`;
     return `<span style="font-size:12px;">${street}</span>`
          + (pc ? `<br><span style="color:#888;font-size:11px;">${pc}</span>` : '');
+  }
+
+  if (nearest.length === 0) {
+    resultsEl.innerHTML = `<p class="nearby-empty">No schools found within ${radius} km. Try increasing the radius.</p>`;
+    document.getElementById('nearby-map').style.display = 'none';
+    return;
   }
 
   resultsEl.innerHTML = `<div class="tbl-wrap"><table>
@@ -873,7 +911,7 @@ async function searchNearby() {
       <td>${d.LANAME  || '\u2014'}</td>
       <td>${d.MINORGROUP || '\u2014'}</td>
       <td><span class="phase-badge phase-${d._phaseKey}">${d._phaseLabel}</span></td>
-      <td class="num">${d._dist.toFixed(1)} km</td>
+      <td class="num">${d._dist.toFixed(2)} km</td>
       <td class="num">${scoreChip(d.composite_score)}</td>
     </tr>`).join('')}</tbody>
   </table></div>`;
