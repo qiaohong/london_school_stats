@@ -13,7 +13,7 @@ URL strategy:
   %5E = ^ (caret), which Rightmove uses as a prefix separator.
 """
 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 # Rightmove supported radius values (miles)
 _RM_RADII = [0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0]
@@ -56,18 +56,16 @@ def build_url(
 
     radius = _nearest_rm_radius(target_miles)
 
-    params = {
-        "locationIdentifier": f"OUTCODE^{outcode}",
-        "radius": radius,
-        "sortType": 6,
-        "includeSSTC": "false",
-    }
+    other_params: dict = {"radius": radius, "sortType": 6, "includeSSTC": "false"}
     if max_price:
-        params["maxPrice"] = max_price
+        other_params["maxPrice"] = max_price
     if min_bedrooms:
-        params["minBedrooms"] = min_bedrooms
+        other_params["minBedrooms"] = min_bedrooms
 
-    return f"https://www.rightmove.co.uk/{path}/find.html?{urlencode(params)}"
+    # locationIdentifier must contain a literal ^ — urlencode would encode it as %5E
+    # which Rightmove does not accept, so we prepend it manually.
+    query = f"locationIdentifier=OUTCODE^{outcode}&{urlencode(other_params)}"
+    return f"https://www.rightmove.co.uk/{path}/find.html?{query}"
 
 
 def describe_radius(cutoff_km: float | None) -> str:
