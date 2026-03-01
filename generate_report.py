@@ -60,6 +60,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>London School Performance Report</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 /* ── Reset & base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -203,6 +205,8 @@ td { padding: 7px 10px; vertical-align: top; }
 .phase-ks4 { background:#e8eef8; color:#1a3a8c; }
 .phase-ks5 { background:#f8f0e8; color:#8c4a1a; }
 .nearby-empty { padding:32px; text-align:center; color:#888; font-size:14px; }
+.nearby-map { height: 420px; margin-top: 16px; border-radius: 8px;
+              border: 1px solid #dde4ec; overflow: hidden; }
 </style>
 </head>
 <body>
@@ -372,6 +376,7 @@ td { padding: 7px 10px; vertical-align: top; }
         <span class="filter-count" id="nearby-status"></span>
       </div>
       <div id="nearby-results"><p class="nearby-empty">Enter a postcode above to find the nearest schools.</p></div>
+      <div id="nearby-map" class="nearby-map" style="display:none"></div>
     </div>
   </div>
 
@@ -872,6 +877,50 @@ async function searchNearby() {
       <td class="num">${scoreChip(d.composite_score)}</td>
     </tr>`).join('')}</tbody>
   </table></div>`;
+
+  // ── Map ──────────────────────────────────────────────────────────────────────
+  const mapEl = document.getElementById('nearby-map');
+  mapEl.style.display = 'block';
+
+  if (!window._nearbyMap) {
+    window._nearbyMap = L.map('nearby-map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 18
+    }).addTo(window._nearbyMap);
+    window._nearbyMapLayers = [];
+  }
+  const nmap = window._nearbyMap;
+
+  // Remove previous markers
+  window._nearbyMapLayers.forEach(l => nmap.removeLayer(l));
+  window._nearbyMapLayers = [];
+
+  // Search-point marker (red)
+  const searchPin = L.circleMarker([lat, lng], {
+    radius: 10, fillColor: '#e74c3c', color: '#c0392b',
+    weight: 2, fillOpacity: 0.9
+  }).bindPopup(`<b>${rawPc.toUpperCase()}</b><br>Your search location`).addTo(nmap);
+  window._nearbyMapLayers.push(searchPin);
+
+  // School markers, coloured by phase
+  const phaseColors = { ks2: '#27ae60', ks4: '#2980b9', ks5: '#e67e22' };
+  for (const d of nearest) {
+    const m = L.circleMarker([d.lat, d.lng], {
+      radius: 8,
+      fillColor: phaseColors[d._phaseKey] || '#888',
+      color: '#fff', weight: 1.5, fillOpacity: 0.85
+    }).bindPopup(
+      `<b>${d.SCHNAME || '\u2014'}</b><br>` +
+      `${d._phaseLabel} \u00b7 ${d._dist.toFixed(1)} km`
+    ).addTo(nmap);
+    window._nearbyMapLayers.push(m);
+  }
+
+  // Fit map to show all markers
+  const bounds = [[lat, lng], ...nearest.map(d => [d.lat, d.lng])];
+  nmap.fitBounds(bounds, { padding: [40, 40] });
+  setTimeout(() => nmap.invalidateSize(), 50);
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
