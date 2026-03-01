@@ -390,6 +390,24 @@ td { padding: 7px 10px; vertical-align: top; }
             <input type="checkbox" id="nearby-ks5" checked> Sixth Form (KS5)
           </label>
         </div>
+        <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
+          <span style="font-weight:500;color:#444;">Type:</span>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="nearby-type-maintained" checked> Maintained
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="nearby-type-academy" checked> Academy
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="nearby-type-independent" checked> Independent
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="nearby-type-special" checked> Special
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="nearby-type-college" checked> College
+          </label>
+        </div>
         <button class="btn-search" onclick="searchNearby()">Search</button>
         <span class="filter-count" id="nearby-status"></span>
       </div>
@@ -868,16 +886,36 @@ async function searchNearby() {
   const wantKS2 = document.getElementById('nearby-ks2').checked;
   const wantKS4 = document.getElementById('nearby-ks4').checked;
   const wantKS5 = document.getElementById('nearby-ks5').checked;
+  const wantMaintained  = document.getElementById('nearby-type-maintained').checked;
+  const wantAcademy     = document.getElementById('nearby-type-academy').checked;
+  const wantIndependent = document.getElementById('nearby-type-independent').checked;
+  const wantSpecial     = document.getElementById('nearby-type-special').checked;
+  const wantCollege     = document.getElementById('nearby-type-college').checked;
 
   if (!wantKS2 && !wantKS4 && !wantKS5) {
     status.textContent = 'Please select at least one phase.';
     return;
   }
+  if (!wantMaintained && !wantAcademy && !wantIndependent && !wantSpecial && !wantCollege) {
+    status.textContent = 'Please select at least one school type.';
+    return;
+  }
+
+  const typeAllowed = t => {
+    if (!t) return true;
+    if (t === 'Maintained school')  return wantMaintained;
+    if (t === 'Academy')            return wantAcademy;
+    if (t === 'Independent school') return wantIndependent;
+    if (t === 'Special school')     return wantSpecial;
+    if (t === 'College')            return wantCollege;
+    return true;
+  };
 
   const nearest = DATA_NEARBY
-    .filter(d => (d._phaseKey === 'ks2' && wantKS2) ||
-                 (d._phaseKey === 'ks4' && wantKS4) ||
-                 (d._phaseKey === 'ks5' && wantKS5))
+    .filter(d => ((d._phaseKey === 'ks2' && wantKS2) ||
+                  (d._phaseKey === 'ks4' && wantKS4) ||
+                  (d._phaseKey === 'ks5' && wantKS5)) &&
+                 typeAllowed(d.MINORGROUP))
     .map(d => ({ ...d, _dist: haversine(lat, lng, d.lat, d.lng) }))
     .filter(d => d._dist <= radius)
     .sort((a, b) => a._dist - b._dist)
