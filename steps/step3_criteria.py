@@ -1,18 +1,13 @@
 """
-Step 3: Collect school criteria — Ofsted, type, admissions, gender, faith, score floor.
+Step 3: Collect school criteria — Ofsted, type, admissions, gender, score floor.
+Religion filter removed; all faith types included by default.
 """
 
 import streamlit as st
 from utils.db import FAITH_GROUPS
 
-# Display order for Ofsted
 OFSTED_OPTIONS = ["Outstanding", "Good", "Requires improvement", "Inadequate"]
-
-# School type options (MINORGROUP values in DB)
 TYPE_OPTIONS = ["Academy", "Maintained school", "College", "Independent school"]
-
-# Faith group display labels (keys from FAITH_GROUPS)
-FAITH_OPTIONS = list(FAITH_GROUPS.keys())
 
 
 def _phase_label(ks_keys: list[str]) -> str:
@@ -36,50 +31,69 @@ def render():
 
     # ── Ofsted ──────────────────────────────────────────────────────────────
     st.subheader("Ofsted rating")
+    st.caption(
+        "Ofsted (Office for Standards in Education) inspects schools on a 4-point scale. "
+        "Inspections typically happen every 4–5 years; ratings can change significantly. "
+        "Around 6% of London schools are Outstanding, 66% Good, 22% Requires improvement, 6% Inadequate. "
+        "Source: DfE school information file (ratings from 2022–23; some may be stale)."
+    )
     ofsted_default = prev.get("ofsted_ratings", ["Outstanding", "Good"])
     ofsted_ratings = st.multiselect(
         "Include schools rated:",
         options=OFSTED_OPTIONS,
         default=ofsted_default,
-        help="Ofsted inspects schools roughly every 4 years. ~6% of London schools are Outstanding.",
     )
     include_no_ofsted = st.checkbox(
-        "Also include schools with no recent Ofsted rating",
+        "Also include schools with no Ofsted rating on record",
         value=prev.get("include_no_ofsted", True),
-        help="Some schools haven't been inspected recently (e.g. new academies, sixth form colleges).",
+        help=(
+            "~4% of schools in scope have no Ofsted record — typically new academies, "
+            "recently opened free schools, or sixth-form colleges not subject to standard inspection."
+        ),
     )
 
     # ── School type ──────────────────────────────────────────────────────────
     st.subheader("School type")
+    st.caption(
+        "**Academy**: state-funded but independently run, outside local authority control. "
+        "May set its own term dates, uniform and curriculum (within national requirements). "
+        "**Maintained school**: run and funded by the local authority; follows standard LA policies. "
+        "**College**: further education or sixth-form college (relevant for KS5 only); "
+        "not inspected by Ofsted under the same framework as schools. "
+        "**Independent**: fee-paying private school; DfE data coverage is partial for this group."
+    )
     type_default = prev.get("school_types", ["Academy", "Maintained school"])
     school_types = st.multiselect(
         "Include school types:",
         options=TYPE_OPTIONS,
         default=type_default,
-        help=(
-            "**Academy**: independently run, state-funded. "
-            "**Maintained**: run by the local authority. "
-            "**College**: FE/sixth-form colleges (KS5 only). "
-            "**Independent**: fee-paying (private)."
-        ),
     )
 
     # ── Admissions ──────────────────────────────────────────────────────────
-    st.subheader("Admissions")
+    st.subheader("Admissions & gender")
     col1, col2 = st.columns(2)
     with col1:
+        st.caption(
+            "**Selective**: school sets its own entrance exam (11+ for grammar schools, "
+            "audition for performing arts). Places awarded by exam score, not proximity. "
+            "**Non-selective**: no entrance exam; places typically allocated by "
+            "distance (straight-line from home to school gate), sibling priority, or faith criteria. "
+            "The `ADMPOL` field in DfE data is the school's registered policy."
+        )
         admpol_options = ["Any", "Non-selective", "Selective"]
         admpol_default = prev.get("admpol", "Non-selective")
         admpol = st.selectbox(
             "Admissions policy",
             options=admpol_options,
             index=admpol_options.index(admpol_default),
-            help=(
-                "**Selective**: entrance exam required (grammar schools). "
-                "**Non-selective**: no exam; typically allocated by distance or faith."
-            ),
         )
     with col2:
+        st.caption(
+            "**Mixed**: co-educational (boys and girls). "
+            "**Single-sex schools** (Boys or Girls) are relatively rare in London — "
+            "around 10% of secondaries. "
+            "Source: `GENDER` field in DfE school information data."
+        )
         gender_options = ["Any", "Mixed", "Girls", "Boys"]
         gender_default = prev.get("gender", "Any")
         gender = st.selectbox(
@@ -88,31 +102,22 @@ def render():
             index=gender_options.index(gender_default),
         )
 
-    # ── Religious character ──────────────────────────────────────────────────
-    st.subheader("Religious character")
-    faith_default = prev.get("faith_groups", list(FAITH_GROUPS.keys()))  # all by default
-    faith_groups = st.multiselect(
-        "Include schools with these religious characters:",
-        options=FAITH_OPTIONS,
-        default=faith_default,
-        help=(
-            "Faith schools may give priority to applicants of that faith in admissions. "
-            "Select all to see every school."
-        ),
-    )
-
     # ── Composite score ──────────────────────────────────────────────────────
     st.subheader("Minimum performance score")
+    st.caption(
+        "Our composite score (0–100) is a weighted combination of progress, attainment, "
+        "attendance and destinations — percentile-ranked within London. "
+        "**50 = London median. 75 = top 25%.** Missing data is imputed at 50. "
+        "Weights: KS2 — progress 40%, RWM attainment 30%, absence 15%, higher attainment 15%. "
+        "KS4 — Progress 8 35%, grade 5+ E&M 25%, absence 15%, destinations 15%, EBacc 10%. "
+        "KS5 — A-level VA 40%, AAB facilitating 25%, HE destinations 25%, absence 10%."
+    )
     min_score = st.slider(
-        "Composite score floor (0 = all schools, 50 = London average, 75 = top quarter)",
+        "Minimum composite score",
         min_value=0,
         max_value=90,
         value=prev.get("min_score", 40),
         step=5,
-        help=(
-            "Our composite score (0–100) combines progress, attainment, attendance, "
-            "and destinations data. 50 = London median."
-        ),
     )
 
     # ── Validation & navigation ───────────────────────────────────────────────
@@ -122,8 +127,6 @@ def render():
         warn.append("Select at least one Ofsted rating (or allow schools with no rating).")
     if not school_types:
         warn.append("Select at least one school type.")
-    if not faith_groups:
-        warn.append("Select at least one religious character option.")
 
     for w in warn:
         st.warning(w)
@@ -141,10 +144,9 @@ def render():
                 "school_types": school_types,
                 "admpol": admpol,
                 "gender": gender,
-                "faith_groups": faith_groups,
+                "faith_groups": list(FAITH_GROUPS.keys()),  # always include all faiths
                 "min_score": min_score,
             }
-            # Clear any cached shortlist so step 4 re-queries
             st.session_state.pop("shortlist_results", None)
             st.session_state.step = 4
             st.rerun()

@@ -14,14 +14,35 @@ _MONTHS = [
 
 _CURRENT_YEAR = date.today().year
 
+_DEFAULT_POSTCODE = "N1C 4DB"
+
+_TECH_POSTCODES = """
+| Company | Address | Postcode |
+|---|---|---|
+| Google | 6 Pancras Square, King's Cross | N1C 4AG |
+| Meta | 21 Canal Reach, King's Cross | N1C 4DB |
+| OpenAI | York House, 221 Pentonville Road | N1 9NL |
+| Amazon | 1 Principal Place, Shoreditch | EC2A 2FA |
+| Microsoft | 2 Kingdom Street, Paddington | W2 6BD |
+| Spotify | 25 Argyll Street, Soho | W1F 7TS |
+| Revolut | 30 South Colonnade, Canary Wharf | E14 5HX |
+| DeepMind | 5 New Street Square, City | EC4A 3TW |
+| Monzo | Broadwalk House, Appold Street | EC2A 2DA |
+| JP Morgan | 25 Bank Street, Canary Wharf | E14 5JP |
+"""
+
 
 def render():
     st.header("Step 1 of 5 — Your situation")
 
     st.subheader("Where do you work?")
+
+    with st.expander("London postcodes for major tech & finance employers"):
+        st.markdown(_TECH_POSTCODES)
+
     postcode = st.text_input(
         "Work postcode",
-        value=st.session_state.get("work_postcode", ""),
+        value=st.session_state.get("work_postcode", _DEFAULT_POSTCODE),
         placeholder="e.g. EC2A 4PX",
         help="We'll use this to estimate commute times to different areas of London.",
     )
@@ -39,9 +60,9 @@ def render():
     with col2:
         flex = st.radio(
             "How strictly should we apply this limit?",
-            options=["Strict", "Flexible (+20 min)"],
+            options=["Strict", "Flexible (+20%)"],
             index=0 if st.session_state.get("commute_flex", "Strict") == "Strict" else 1,
-            help="Flexible adds 20 minutes of headroom to catch areas that are close but slightly over.",
+            help="Flexible adds 20% headroom (e.g. 8 min on a 40 min limit) to catch areas slightly over.",
         )
 
     st.subheader("Your children")
@@ -86,8 +107,7 @@ def render():
         yg = birth_to_year_group(birth_year, birth_month)
         if yg is not None:
             phases = relevant_phases(birth_year, birth_month)
-            labels = [f"{year_group_label(p['year_group'])} ({p['phase']})" for p in phases]
-            if labels:
+            if phases:
                 label_str = " → ".join(dict.fromkeys(p["phase"] for p in phases))
                 st.success(f"Currently {year_group_label(yg)} — stages to consider: **{label_str}**")
         else:
@@ -110,10 +130,11 @@ def render():
         st.warning("One or more children's birth dates couldn't be resolved to a year group.")
 
     if st.button("Next: Choose areas →", type="primary", disabled=not (postcode_ok and children_ok)):
+        flex_pct = 0.20 if flex == "Flexible (+20%)" else 0.0
         st.session_state.work_postcode = postcode.strip().upper()
         st.session_state.commute_limit = commute_limit
         st.session_state.commute_flex = flex
-        st.session_state.flex_minutes = 20 if flex == "Flexible (+20 min)" else 0
+        st.session_state.flex_minutes = int(commute_limit * flex_pct)
         st.session_state.num_children = int(num_children)
         st.session_state.children = children
         st.session_state.step = 2

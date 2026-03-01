@@ -1,15 +1,24 @@
 """
 Step 2: Resolve work postcode, estimate commute to each LA, recommend top 3,
 and let the user confirm/adjust their borough selection.
+
+Ranking heuristic: 50% commute score + 50% school quality score.
+  - Commute score: 1 - (mid_commute / max_feasible_commute), normalised across all passing LAs.
+  - School quality: avg composite score across relevant phases, from metrics_la.
 """
 
+import sqlite3
+import os
 import streamlit as st
-from utils.commute import resolve_postcode, filter_las_by_commute, load_profiles
+from utils.commute import resolve_postcode, filter_las_by_commute, load_profiles, estimate_commute
 from utils.age_stage import phases_to_ks_keys
+
+_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "schools.db")
+
+_PHASE_MAP = {"ks2": "KS2", "ks4": "KS4", "ks5": "KS5"}
 
 
 def _all_phases_for_children() -> list[str]:
-    """Collect all unique school phase labels across all children."""
     seen = set()
     result = []
     for child in st.session_state.get("children", []):
@@ -22,7 +31,6 @@ def _all_phases_for_children() -> list[str]:
 
 
 def _ks_keys_for_children() -> list[str]:
-    """Collect DB keys (ks2/ks4/ks5) relevant across all children."""
     keys = []
     for child in st.session_state.get("children", []):
         for k in phases_to_ks_keys(child.get("phases", [])):
@@ -31,16 +39,67 @@ def _ks_keys_for_children() -> list[str]:
     return keys
 
 
+def _la_school_quality(ks_keys: list[str]) -> dict[str, float]:
+    """
+    Return {la_name: avg_composite} averaged across the relevant phases.
+    Scores come from metrics_la.avg_composite (0–100).
+    """
+    if not ks_keys:
+        return {}
+    phases = [_PHASE_MAP[k] for k in ks_keys if k in _PHASE_MAP]
+    conn = sqlite3.connect(_DB_PATH)
+    cur = conn.cursor()
+    placeholders = ",".join("?" * len(phases))
+    cur.execute(
+        f"SELECT borough, AVG(avg_composite) FROM metrics_la WHERE phase IN ({placeholders}) GROUP BY borough",
+        phases,
+    )
+    result = {row[0]: row[1] for row in cur.fetchall() if row[1] is not None}
+    conn.close()
+    return result
+
+
+def _rank_las(results: list[dict], quality: dict[str, float]) -> list[dict]:
+    """
+    Re-rank LAs that pass commute filter by combined score:
+      50% commute (lower mid = better) + 50% school quality (higher = better).
+    """
+    if not results:
+        return results
+
+    mids = [(la["commute_min"] + la["commute_max"]) / 2 for la in results]
+    max_mid = max(mids) or 1
+    min_mid = min(mids) or 0
+
+    max_quality = max(quality.values()) if quality else 100
+    min_quality = min(quality.values()) if quality else 0
+    quality_range = max_quality - min_quality or 1
+
+    scored = []
+    for la, mid in zip(results, mids):
+        commute_score = 1 - (mid - min_mid) / (max_mid - min_mid + 1)
+        q = quality.get(la["la_name"], 50)
+        quality_score = (q - min_quality) / quality_range
+        combined = 0.5 * commute_score + 0.5 * quality_score
+        n_schools = 0
+        scored.append({**la, "_combined": combined, "_quality": q, "_n_schools": n_schools})
+
+    scored.sort(key=lambda x: -x["_combined"])
+    return scored
+
+
 def render():
     st.header("Step 2 of 5 — Choose your areas")
 
     postcode = st.session_state.get("work_postcode", "")
     limit = st.session_state.get("commute_limit", 40)
     flex = st.session_state.get("flex_minutes", 0)
+    ks_keys = _ks_keys_for_children()
 
+    effective = limit + flex
     st.caption(
         f"Finding London boroughs reachable within **{limit} min**"
-        + (f" (+ {flex} min flexible buffer)" if flex else "")
+        + (f" (+ {flex} min, {int(flex/(limit or 1)*100)}% buffer)" if flex else "")
         + f" from **{postcode}** by public transport."
     )
 
@@ -59,17 +118,20 @@ def render():
 
     work_lat, work_lng = st.session_state.work_latlng
 
-    # Compute commute estimates
-    if "la_commute_results" not in st.session_state or st.session_state.get("_commute_key") != (postcode, limit, flex):
-        with st.spinner("Estimating commute times to each borough…"):
+    # Compute commute estimates + quality ranking (cached)
+    cache_key = (postcode, limit, flex, tuple(ks_keys))
+    if "la_commute_results" not in st.session_state or st.session_state.get("_commute_key") != cache_key:
+        with st.spinner("Estimating commute times and school quality by borough…"):
             results = filter_las_by_commute(work_lat, work_lng, limit, flex)
-        st.session_state.la_commute_results = results
-        st.session_state._commute_key = (postcode, limit, flex)
+            quality = _la_school_quality(ks_keys)
+            ranked = _rank_las(results, quality)
+        st.session_state.la_commute_results = ranked
+        st.session_state._commute_key = cache_key
 
     results = st.session_state.la_commute_results
     all_profiles = load_profiles()
+    quality = _la_school_quality(ks_keys)
 
-    # Recommended (top 3 that fit)
     recommended = results[:3]
     recommended_codes = {la["la_code"] for la in recommended}
 
@@ -77,20 +139,28 @@ def render():
 
     if recommended:
         st.subheader(f"Recommended boroughs for {phases_label}")
-        st.caption("Based on commute time and transport connectivity.")
+        st.caption(
+            "Ranked by a combination of commute time (50%) and school quality "
+            "— average composite score across relevant phases (50%)."
+        )
         for la in recommended:
             mn, mx = la["commute_min"], la["commute_max"]
             lines = ", ".join(la["lines"][:3])
+            q = quality.get(la["la_name"])
+            q_str = f" · School quality score: **{q:.0f}/100**" if q else ""
             with st.expander(f"**{la['la_name']}** — {mn}–{mx} min commute", expanded=True):
                 cols = st.columns([3, 1])
                 with cols[0]:
                     st.markdown(la["character"])
-                    st.caption(f"Transport: {lines} · Zones {la['zone_min']}–{la['zone_max']}")
+                    st.caption(f"Transport: {lines} · Zones {la['zone_min']}–{la['zone_max']}{q_str}")
                 with cols[1]:
                     st.metric("Commute", f"{mn}–{mx} min")
+                    if q:
+                        st.metric("School quality", f"{q:.0f}/100",
+                                  help="Average composite score across relevant phases (London avg = 50).")
     else:
         st.warning(
-            f"No boroughs found within {limit + flex} minutes of {postcode}. "
+            f"No boroughs found within {effective} minutes of {postcode}. "
             "Try increasing your commute limit or using the flexible option."
         )
 
@@ -98,10 +168,8 @@ def render():
     st.subheader("Confirm your borough selection")
     st.caption("Select the boroughs you want to search schools in. You can include others beyond the recommended ones.")
 
-    # Pre-select recommended boroughs
     prev_selected = st.session_state.get("selected_la_codes", list(recommended_codes))
 
-    # Build options: recommended first, then rest alphabetically
     other_profiles = [p for p in all_profiles if p["la_code"] not in recommended_codes]
     other_profiles.sort(key=lambda x: x["la_name"])
     all_ordered = recommended + other_profiles
@@ -114,16 +182,11 @@ def render():
         mn = la.get("commute_min")
         mx = la.get("commute_max")
         if mn is None:
-            # Not in filtered results — compute on the fly
-            from utils.commute import estimate_commute
             mn, mx = estimate_commute(la, work_lat, work_lng)
 
-        label = la["la_name"]
-        if is_recommended:
-            label = f"⭐ {label}"
-        sublabel = f"{mn}–{mx} min"
+        label = f"⭐ {la['la_name']}" if is_recommended else la["la_name"]
         checked = col.checkbox(
-            f"{label}  ({sublabel})",
+            f"{label}  ({mn}–{mx} min)",
             value=la["la_code"] in prev_selected,
             key=f"la_check_{la['la_code']}",
         )
@@ -145,7 +208,7 @@ def render():
             selected_las = [la for la in all_profiles if la["la_code"] in selected_codes]
             st.session_state.selected_la_codes = selected_codes
             st.session_state.selected_las = selected_las
-            st.session_state.ks_keys = _ks_keys_for_children()
+            st.session_state.ks_keys = ks_keys
             st.session_state.step = 3
             st.rerun()
 

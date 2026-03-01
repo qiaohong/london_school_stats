@@ -15,6 +15,20 @@ from utils.neighbourhood import (
 )
 
 _KS_LABELS = {"ks2": "Primary", "ks4": "Secondary", "ks5": "Sixth Form"}
+
+_MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+def _fmt_insp_date(raw: str) -> str:
+    """Convert 'DD-MM-YYYY' → 'Mon YYYY'. Returns raw string on parse failure."""
+    try:
+        parts = raw.split("-")
+        if len(parts) == 3:
+            month = _MONTH_ABBR[int(parts[1]) - 1]
+            return f"{month} {parts[2]}"
+    except Exception:
+        pass
+    return raw
+
 _OFSTED_EMOJI = {
     "Outstanding": "★",
     "Good": "✓",
@@ -80,7 +94,7 @@ def _school_card(school: dict, nb: dict, ks_key: str, idx: int):
                 colour = {"Outstanding": "🟢", "Good": "🔵", "Requires improvement": "🟡", "Inadequate": "🔴"}.get(ofsted, "⚪")
                 st.markdown(f"**{colour} {ofsted}**")
                 if school.get("OFSTEDLASTINSP"):
-                    st.caption(f"Inspected {school['OFSTEDLASTINSP'][:7]}")
+                    st.caption(f"Inspected {_fmt_insp_date(school['OFSTEDLASTINSP'])}")
             else:
                 st.caption("No Ofsted data")
 
@@ -116,7 +130,11 @@ def _school_card(school: dict, nb: dict, ks_key: str, idx: int):
                 st.metric(
                     "Avg house price",
                     f"£{house_price:,.0f}",
-                    help="Approximate 2024 median for this borough (Land Registry).",
+                )
+                st.caption(
+                    "2024 borough median (Land Registry). "
+                    "All schools in the same borough show the same figure — "
+                    "intra-borough variation can be large."
                 )
             else:
                 st.caption("House price: n/a")
@@ -129,7 +147,11 @@ def _school_card(school: dict, nb: dict, ks_key: str, idx: int):
                 st.metric(
                     "Crime nearby",
                     f"{crime_data['total']:,} / month",
-                    help=f"Total crimes within ~1 mile radius, {month} (data.police.uk).",
+                )
+                st.caption(
+                    f"All crimes within ~1 mile of the **school's postcode** "
+                    f"({month}, data.police.uk). "
+                    "Radius is fixed by the API and cannot be narrowed."
                 )
                 st.caption(f"Level: :{colour}[{label}]")
             elif crime_data is not None:
