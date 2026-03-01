@@ -1128,10 +1128,16 @@ def main():
     ks5 = load(conn, "metrics_ks5", KS5_COLS)
     la  = load(conn, "metrics_la")
 
-    # Address + Ofsted lookup: most recent row per URN
+    # Address lookup: most recent row per URN
     addr = pd.read_sql(
-        "SELECT URN, STREET, LOCALITY, TOWN, OFSTEDRATING, OFSTEDLASTINSP "
-        "FROM schools ORDER BY academic_year DESC",
+        "SELECT URN, STREET, LOCALITY, TOWN FROM schools ORDER BY academic_year DESC",
+        conn
+    ).drop_duplicates("URN")
+
+    # Ofsted lookup: most recent non-null row per URN (only 2022-23 file has these columns)
+    ofsted = pd.read_sql(
+        "SELECT URN, OFSTEDRATING, OFSTEDLASTINSP FROM schools "
+        "WHERE OFSTEDRATING IS NOT NULL ORDER BY academic_year DESC",
         conn
     ).drop_duplicates("URN")
 
@@ -1141,11 +1147,12 @@ def main():
 
     # Merge address + Ofsted fields into each phase dataframe via URN, then drop URN
     for df in (ks2, ks4, ks5):
-        merged = df.merge(addr, on="URN", how="left")
-        df["STREET"]         = merged["STREET"].values
-        df["LOCALITY"]       = merged["LOCALITY"].values
-        df["OFSTEDRATING"]   = merged["OFSTEDRATING"].values
-        df["OFSTEDLASTINSP"] = merged["OFSTEDLASTINSP"].values
+        a = df.merge(addr, on="URN", how="left")
+        o = df.merge(ofsted, on="URN", how="left")
+        df["STREET"]         = a["STREET"].values
+        df["LOCALITY"]       = a["LOCALITY"].values
+        df["OFSTEDRATING"]   = o["OFSTEDRATING"].values
+        df["OFSTEDLASTINSP"] = o["OFSTEDLASTINSP"].values
     ks2.drop(columns=["URN"], inplace=True)
     ks4.drop(columns=["URN"], inplace=True)
     ks5.drop(columns=["URN"], inplace=True)
