@@ -8,6 +8,7 @@ import sqlite3
 import streamlit as st
 from utils.rightmove import build_url, describe_radius
 from utils.neighbourhood import crime_label, CRIME_CATEGORY_LABELS
+from utils.score_config import get_available_attributes, attributes_for_ks
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "schools.db")
 _ADMISSIONS_URLS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "la_admissions_urls.json")
@@ -103,8 +104,8 @@ def _section_metrics_ks2(school: dict, la_avg: dict, lon_avg: dict):
         else:
             col.metric(label, "n/a")
 
-    # Borough comparison
-    if la_avg:
+    # Borough comparison (only shown when no custom score, since _section_custom_score shows per-attribute borough data)
+    if la_avg and not st.session_state.get("score_weights"):
         with st.expander("Borough comparison"):
             b_cols = st.columns(3)
             b_cols[0].metric("Borough composite avg", f"{la_avg.get('avg_composite', 0):.0f}")
@@ -140,7 +141,7 @@ def _section_metrics_ks4(school: dict, la_avg: dict, lon_avg: dict):
         mc2[1].metric("NEET %",        f"{school.get('dest_pct_neet', 0):.1f}%" if school.get('dest_pct_neet') else "n/a")
         mc2[2].metric("Cohort size",   f"{int(school.get('ks4_cohort', 0))}" if school.get('ks4_cohort') else "n/a")
 
-    if la_avg:
+    if la_avg and not st.session_state.get("score_weights"):
         with st.expander("Borough comparison"):
             b_cols = st.columns(3)
             b_cols[0].metric("Borough composite avg", f"{la_avg.get('avg_composite', 0):.0f}")
@@ -170,6 +171,114 @@ def _section_metrics_ks5(school: dict, la_avg: dict, lon_avg: dict):
         mc[1].metric("A-level cohort",  f"{int(school.get('alevel_cohort', 0))}" if school.get('alevel_cohort') else "n/a")
 
 
+def _fetch_attribute_averages(
+    ks_key: str, field_keys: list[str], borough: str
+) -> dict[str, tuple[float | None, float | None]]:
+    """Return {field_key: (london_avg, borough_avg)} for the given fields and ks_key.
+    Cached in session state per ks_key + borough."""
+    cache_key = f"_attr_avgs_{ks_key}_{borough}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+
+    conn = sqlite3.connect(_DB_PATH)
+    cur = conn.cursor()
+    result: dict[str, tuple] = {}
+    table = f"metrics_{ks_key}"
+    for key in field_keys:
+        try:
+            cur.execute(f"SELECT AVG({key}) FROM {table}")
+            row = cur.fetchone()
+            london_avg = row[0] if row and row[0] is not None else None
+            cur.execute(f"SELECT AVG({key}) FROM {table} WHERE LANAME = ?", (borough,))
+            row = cur.fetchone()
+            borough_avg = row[0] if row and row[0] is not None else None
+            result[key] = (london_avg, borough_avg)
+        except Exception:
+            result[key] = (None, None)
+    conn.close()
+    st.session_state[cache_key] = result
+    return result
+
+
+def _section_custom_score(school: dict, ks_key: str):
+    """Show a breakdown of the user's custom score variables for this school."""
+    weights: dict[str, int] = st.session_state.get("score_weights", {})
+    directions: dict = st.session_state.get("score_weight_directions", {})
+    if not weights:
+        return
+
+    valid_keys = attributes_for_ks(ks_key)
+    applicable = {k: v for k, v in weights.items() if k in valid_keys}
+    if not applicable:
+        return
+
+    custom_score = school.get("custom_score")
+    borough = school.get("LANAME", "")
+
+    # Build label lookup from score_config
+    ks_keys = st.session_state.get("ks_keys", [ks_key])
+    attr_meta = {fk: (lbl, desc, hib) for fk, lbl, desc, hib in get_available_attributes(ks_keys)}
+
+    # Fetch London + borough averages for all applicable fields
+    averages = _fetch_attribute_averages(ks_key, list(applicable.keys()), borough)
+
+    def _fmt(val) -> str:
+        if val is None:
+            return "n/a"
+        if isinstance(val, float) and abs(val) < 5:
+            return f"{val:+.2f}"
+        return f"{val:.1f}"
+
+    with st.container(border=True):
+        header_col, score_col = st.columns([3, 1])
+        with header_col:
+            st.markdown("**Your custom score**")
+            st.caption("Based on the weights you set in Step 2.")
+        with score_col:
+            if custom_score is not None:
+                st.metric("Score", f"{custom_score:.0f} / 100")
+
+        cols = st.columns(len(applicable))
+        for col, (field_key, weight) in zip(cols, applicable.items()):
+            label, desc, hib = attr_meta.get(field_key, (field_key, "", True))
+            val = school.get(field_key)
+            london_avg, borough_avg = averages.get(field_key, (None, None))
+
+            # Effective direction (user may have chosen for contextual attributes)
+            hib_effective = directions.get(field_key, True if hib is None else hib)
+
+            val_str = _fmt(val)
+
+            # Delta vs London average
+            if val is not None and london_avg is not None:
+                diff = val - london_avg
+                delta_str = f"{_fmt(diff)} vs London"
+                delta_color = "normal" if (diff >= 0) == hib_effective else "inverse"
+            else:
+                delta_str = None
+                delta_color = "off"
+
+            if hib is False:
+                direction_note = "↓ lower is better"
+            elif hib is True:
+                direction_note = "↑ higher is better"
+            else:
+                direction_note = "— contextual"
+
+            with col:
+                st.metric(
+                    label=label,
+                    value=val_str,
+                    delta=delta_str,
+                    delta_color=delta_color,
+                    help=f"{desc}\n\nWeight: {weight}%  ·  {direction_note}",
+                )
+                caption_parts = [f"Weight: **{weight}%**"]
+                if borough_avg is not None:
+                    caption_parts.append(f"Borough avg: {_fmt(borough_avg)}")
+                st.caption("  ·  ".join(caption_parts))
+
+
 def render():
     school = st.session_state.get("selected_school")
     nb = st.session_state.get("selected_school_nb", {})
@@ -178,7 +287,7 @@ def render():
     if not school:
         st.warning("No school selected. Please go back to the shortlist.")
         if st.button("← Back to shortlist"):
-            st.session_state.step = 4
+            st.session_state.step = 5
             st.rerun()
         return
 
@@ -206,6 +315,9 @@ def render():
                 st.caption(f"Inspected {school['OFSTEDLASTINSP'][:7]}")
 
     st.divider()
+
+    # ── Custom score breakdown (if user configured weights in Step 2) ──────────
+    _section_custom_score(school, ks_key)
 
     # ── Performance metrics ───────────────────────────────────────────────────
     borough = la_name
@@ -271,13 +383,12 @@ def render():
     st.divider()
 
     # ── School info ───────────────────────────────────────────────────────────
-    st.subheader("School information")
+    st.subheader("School information & admissions")
 
     details = _school_details(school["URN"])
 
     info_col1, info_col2 = st.columns(2)
     with info_col1:
-        # Full address
         addr_parts = [
             details.get("STREET"),
             details.get("LOCALITY"),
@@ -286,38 +397,22 @@ def render():
             school.get("POSTCODE"),
         ]
         address = ", ".join(p for p in addr_parts if p)
-        st.markdown(f"**Address**")
+        st.markdown("**Address**")
         st.write(address or school.get("POSTCODE", "n/a"))
 
-        # Age range
         age_low = details.get("AGELOW")
         age_high = details.get("AGEHIGH")
         if age_low is not None and age_high is not None:
             st.markdown(f"**Age range:** {int(age_low)}–{int(age_high)}")
 
-        # School type
         st.markdown(f"**Type:** {school.get('MINORGROUP', 'n/a')}")
 
     with info_col2:
-        # Pupil numbers & context
         cohort = school.get("census_total_pupils") or school.get("ks4_cohort")
         if cohort:
             st.metric("Total pupils", f"{int(cohort):,}")
 
-        fsm = school.get("pct_fsm")
-        eal = school.get("pct_eal")
-        sen = school.get("pct_sen_support")
-        if fsm is not None:
-            st.metric("Free school meals", f"{fsm:.1f}%",
-                      help="% of pupils eligible for free school meals — a proxy for socioeconomic deprivation.")
-        if eal is not None:
-            st.metric("English as additional language", f"{eal:.1f}%",
-                      help="% of pupils whose first language is not English (DfE census).")
-
-    st.divider()
-
-    # ── Admissions info ───────────────────────────────────────────────────────
-    st.subheader("Admissions")
+    st.markdown("---")
 
     admpol = school.get("ADMPOL") or "Non-selective"
     relchar = school.get("RELCHAR")
@@ -457,7 +552,7 @@ def render():
     col_back, col_restart = st.columns([1, 1])
     with col_back:
         if st.button("← Back to shortlist"):
-            st.session_state.step = 4
+            st.session_state.step = 5
             st.rerun()
     with col_restart:
         if st.button("Start over"):

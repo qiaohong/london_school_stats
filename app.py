@@ -279,7 +279,7 @@ if "step" not in st.session_state:
     st.session_state.step = 1
 
 # --- Progress bar ---
-STEPS = ["Your situation", "Choose areas", "School criteria", "Shortlist", "Deep dive"]
+STEPS = ["Your situation", "Build your score", "Choose areas", "School criteria", "Shortlist", "Deep dive"]
 step = st.session_state.step
 
 st.title("London School Selector")
@@ -292,17 +292,21 @@ if step == 1:
     render()
 
 elif step == 2:
-    from steps.step2_la_select import render
+    from steps.step2_score_weights import render
     render()
 
 elif step == 3:
-    from steps.step3_criteria import render
+    from steps.step2_la_select import render
     render()
 
 elif step == 4:
-    from steps.step4_shortlist import render
+    from steps.step3_criteria import render
     render()
 
 elif step == 5:
+    from steps.step4_shortlist import render
+    render()
+
+elif step == 6:
     from steps.step5_deepdive import render
     render()

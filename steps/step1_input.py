@@ -77,7 +77,7 @@ _TECH_POSTCODES = """
 
 
 def render():
-    st.header("Step 1 of 5 — Your situation")
+    st.header("Step 1 of 6 — Your situation")
 
     st.subheader("Where do you work?")
 
@@ -92,54 +92,24 @@ def render():
     )
 
     st.subheader("Commute preferences")
-    col1, col2 = st.columns(2)
-    with col1:
-        commute_limit = st.slider(
-            "Maximum commute time (minutes)",
-            min_value=10,
-            max_value=90,
-            value=st.session_state.get("commute_limit", 40),
-            step=5,
-        )
-    with col2:
-        flex = st.radio(
-            "How strictly should we apply this limit?",
-            options=["Strict", "Flexible (+20%)"],
-            index=0 if st.session_state.get("commute_flex", "Strict") == "Strict" else 1,
-            help="Flexible adds 20% headroom (e.g. 8 min on a 40 min limit) to catch areas slightly over.",
-        )
+    commute_limit = st.slider(
+        "Maximum commute time (minutes)",
+        min_value=10,
+        max_value=90,
+        value=st.session_state.get("commute_limit", 40),
+        step=5,
+    )
 
     st.subheader("Your children")
     st.caption(
         "We'll work out which school stages are relevant based on their age, "
         "looking at now and the next 3 years."
     )
-    with st.expander("Key stages & admission types explained"):
-        st.caption(
-            "**KS1/KS2** = Primary (ages 5–11, Years 1–6)  ·  "
-            "**KS3/KS4** = Secondary (ages 11–16, Years 7–11)  ·  "
-            "**KS5** = Sixth Form (ages 16–18, Years 12–13)"
-        )
-        st.markdown(
-            "| Year group | Admission type | What it means |\n"
-            "|---|---|---|\n"
-            "| Nursery / Reception | **Standard** | Applying for Reception in the main round — deadline ~15 Jan for Sept start |\n"
-            "| Year 6 | **Standard** | Applying for Year 7 in the main round — deadline ~31 Oct for Sept start |\n"
-            "| Year 11 | **Standard** | Applying for Year 12 / sixth form — deadline varies by school |\n"
-            "| All other year groups | **In-year** | Joining mid-phase — apply directly to the school or LA for a mid-year place |"
-        )
 
-    num_children = st.number_input(
-        "How many children?",
-        min_value=1,
-        max_value=3,
-        value=st.session_state.get("num_children", 1),
-        step=1,
-    )
+    num_children = 1
 
     children = []
-    for i in range(int(num_children)):
-        st.markdown(f"**Child {i + 1}**")
+    for i in range(num_children):
         prev = st.session_state.get("children", [])
         prev_child = prev[i] if i < len(prev) else {}
 
@@ -195,6 +165,21 @@ def render():
             st.info("Please enter a valid birth year.")
             phases = []
 
+        with st.expander("Key stages & admission types explained"):
+            st.caption(
+                "**KS1/KS2** = Primary (ages 5–11, Years 1–6)  ·  "
+                "**KS3/KS4** = Secondary (ages 11–16, Years 7–11)  ·  "
+                "**KS5** = Sixth Form (ages 16–18, Years 12–13)"
+            )
+            st.markdown(
+                "| Year group | Admission type | What it means |\n"
+                "|---|---|---|\n"
+                "| Nursery / Reception | **Standard** | Applying for Reception in the main round — deadline ~15 Jan for Sept start |\n"
+                "| Year 6 | **Standard** | Applying for Year 7 in the main round — deadline ~31 Oct for Sept start |\n"
+                "| Year 11 | **Standard** | Applying for Year 12 / sixth form — deadline varies by school |\n"
+                "| All other year groups | **In-year** | Joining mid-phase — apply directly to the school or LA for a mid-year place |"
+            )
+
         children.append({
             "birth_year": int(birth_year),
             "birth_month": birth_month,
@@ -208,13 +193,12 @@ def render():
     if not postcode_ok:
         st.warning("Please enter a full UK postcode (e.g. EC2A 4PX).")
 
-    if st.button("Next: Choose areas →", type="primary", disabled=not (postcode_ok and children_ok)):
-        flex_pct = 0.20 if flex == "Flexible (+20%)" else 0.0
+    if st.button("Next: Build your score →", type="primary", disabled=not (postcode_ok and children_ok)):
         st.session_state.work_postcode = postcode.strip().upper()
         st.session_state.commute_limit = commute_limit
-        st.session_state.commute_flex = flex
-        st.session_state.flex_minutes = int(commute_limit * flex_pct)
-        st.session_state.num_children = int(num_children)
+        st.session_state.commute_flex = "Strict"
+        st.session_state.flex_minutes = 0
+        st.session_state.num_children = 1
         st.session_state.children = children
         st.session_state.step = 2
         st.rerun()

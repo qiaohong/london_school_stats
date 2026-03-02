@@ -16,16 +16,22 @@ def _phase_label(ks_keys: list[str]) -> str:
 
 
 def render():
-    st.header("Step 3 of 5 — School criteria")
+    st.header("Step 4 of 6 — School criteria")
 
     las = [la["la_name"] for la in st.session_state.get("selected_las", [])]
     ks_keys = st.session_state.get("ks_keys", ["ks4"])
     phase_str = _phase_label(ks_keys)
 
-    st.caption(
-        f"Searching **{phase_str}** schools in: **{', '.join(las)}**. "
-        "Adjust these filters or keep the defaults."
-    )
+    col_info, col_change = st.columns([4, 1])
+    with col_info:
+        st.caption(
+            f"Searching **{phase_str}** schools in: **{', '.join(las)}**. "
+            "Adjust these filters or keep the defaults."
+        )
+    with col_change:
+        if st.button("Change boroughs"):
+            st.session_state.step = 3
+            st.rerun()
 
     prev = st.session_state.get("criteria", {})
 
@@ -52,24 +58,7 @@ def render():
         ),
     )
 
-    # ── School type ──────────────────────────────────────────────────────────
-    st.subheader("School type")
-    st.caption(
-        "**Academy**: state-funded but independently run, outside local authority control. "
-        "May set its own term dates, uniform and curriculum (within national requirements). "
-        "**Maintained school**: run and funded by the local authority; follows standard LA policies. "
-        "**College**: further education or sixth-form college (relevant for KS5 only); "
-        "not inspected by Ofsted under the same framework as schools. "
-        "**Independent**: fee-paying private school; DfE data coverage is partial for this group."
-    )
-    type_default = prev.get("school_types", ["Academy", "Maintained school"])
-    school_types = st.multiselect(
-        "Include school types:",
-        options=TYPE_OPTIONS,
-        default=type_default,
-    )
-
-    # ── Admissions ──────────────────────────────────────────────────────────
+    # ── Admissions & gender ──────────────────────────────────────────────────
     st.subheader("Admissions & gender")
     col1, col2 = st.columns(2)
     with col1:
@@ -102,21 +91,48 @@ def render():
             index=gender_options.index(gender_default),
         )
 
-    # ── Composite score ──────────────────────────────────────────────────────
-    st.subheader("Minimum performance score")
+    # ── School type ──────────────────────────────────────────────────────────
+    st.subheader("School type")
     st.caption(
-        "Our composite score (0–100) is a weighted combination of progress, attainment, "
-        "attendance and destinations — percentile-ranked within London. "
-        "**50 = London median. 75 = top 25%.** Missing data is imputed at 50. "
-        "Weights: KS2 — progress 40%, RWM attainment 30%, absence 15%, higher attainment 15%. "
-        "KS4 — Progress 8 35%, grade 5+ E&M 25%, absence 15%, destinations 15%, EBacc 10%. "
-        "KS5 — A-level VA 40%, AAB facilitating 25%, HE destinations 25%, absence 10%."
+        "**Academy**: state-funded but independently run, outside local authority control. "
+        "May set its own term dates, uniform and curriculum (within national requirements). "
+        "**Maintained school**: run and funded by the local authority; follows standard LA policies. "
+        "**College**: further education or sixth-form college (relevant for KS5 only); "
+        "not inspected by Ofsted under the same framework as schools. "
+        "**Independent**: fee-paying private school; DfE data coverage is partial for this group."
     )
-    min_score = st.slider(
-        "Minimum composite score",
-        min_value=0,
-        max_value=90,
-        value=prev.get("min_score", 40),
+    type_default = prev.get("school_types", ["Academy", "Maintained school"])
+    school_types = st.multiselect(
+        "Include school types:",
+        options=TYPE_OPTIONS,
+        default=type_default,
+    )
+
+    # ── Religion ─────────────────────────────────────────────────────────────
+    st.subheader("Religious character")
+    st.caption(
+        "Faith schools may give admissions priority to families of that faith. "
+        "Around 30% of London schools have a religious character. "
+        "Select all to include every school regardless of faith."
+    )
+    faith_default = prev.get("faith_groups", list(FAITH_GROUPS.keys()))
+    faith_groups = st.multiselect(
+        "Include schools with religious character:",
+        options=list(FAITH_GROUPS.keys()),
+        default=faith_default,
+    )
+
+    # ── Number of schools ────────────────────────────────────────────────────
+    st.subheader("Number of schools to show")
+    st.caption(
+        "Schools are ranked by your custom score (if set in Step 2) or the system composite score. "
+        "The shortlist will show the top N schools passing your other filters above."
+    )
+    max_schools = st.number_input(
+        "Maximum schools to show per phase",
+        min_value=5,
+        max_value=100,
+        value=prev.get("max_schools", 20),
         step=5,
     )
 
@@ -127,6 +143,8 @@ def render():
         warn.append("Select at least one Ofsted rating (or allow schools with no rating).")
     if not school_types:
         warn.append("Select at least one school type.")
+    if not faith_groups:
+        warn.append("Select at least one religious character option.")
 
     for w in warn:
         st.warning(w)
@@ -134,7 +152,7 @@ def render():
     col_back, col_next = st.columns([1, 3])
     with col_back:
         if st.button("← Back"):
-            st.session_state.step = 2
+            st.session_state.step = 3
             st.rerun()
     with col_next:
         if st.button("Next: See your shortlist →", type="primary", disabled=bool(warn)):
@@ -144,9 +162,9 @@ def render():
                 "school_types": school_types,
                 "admpol": admpol,
                 "gender": gender,
-                "faith_groups": list(FAITH_GROUPS.keys()),  # always include all faiths
-                "min_score": min_score,
+                "faith_groups": faith_groups,
+                "max_schools": int(max_schools),
             }
             st.session_state.pop("shortlist_results", None)
-            st.session_state.step = 4
+            st.session_state.step = 5
             st.rerun()

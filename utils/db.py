@@ -45,7 +45,6 @@ def query_schools(
     admpol: str,                    # 'Any' | 'Selective' | 'Non-selective'
     gender: str,                    # 'Any' | 'Mixed' | 'Boys' | 'Girls'
     faith_groups: list[str],        # display-label keys from FAITH_GROUPS
-    min_score: int,
     include_no_ofsted: bool = True,
 ) -> list[dict]:
     """
@@ -64,10 +63,6 @@ def query_schools(
         placeholders = ",".join("?" * len(la_codes))
         conditions.append(f"m.LA IN ({placeholders})")
         params.extend(la_codes)
-
-    # Composite score
-    conditions.append("m.composite_score >= ?")
-    params.append(min_score)
 
     # School type
     if school_types:
@@ -146,7 +141,6 @@ def query_schools(
         {ofsted_join}
         WHERE {where_clause}
         ORDER BY m.composite_score DESC
-        LIMIT 100
     """
 
     cur.execute(sql, params)

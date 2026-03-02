@@ -12,6 +12,7 @@ import os
 import streamlit as st
 from utils.commute import resolve_postcode, filter_las_by_commute, load_profiles, estimate_commute
 from utils.age_stage import phases_to_ks_keys
+from utils.score_config import fetch_london_bounds, fetch_top10_thresholds, attributes_for_ks
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "schools.db")
 
@@ -85,6 +86,83 @@ def _la_high_score_count(ks_keys: list[str]) -> dict[str, int]:
     return counts
 
 
+def _la_custom_quality(ks_keys: list[str]) -> tuple[dict[str, float], dict[str, int]]:
+    """
+    Compute per-LA avg custom score and count of schools with custom score >= 60,
+    using the user's score_weights and London-wide normalisation bounds.
+    Falls back to legacy composite_score functions if no weights are set.
+    """
+    weights: dict[str, int] = st.session_state.get("score_weights", {})
+    directions: dict = st.session_state.get("score_weight_directions", {})
+    binary_flags: dict[str, bool] = st.session_state.get("score_weight_binary", {})
+
+    if not weights:
+        return _la_school_quality(ks_keys), _la_high_score_count(ks_keys)
+
+    la_scores: dict[str, list[float]] = {}
+    conn = sqlite3.connect(_DB_PATH)
+    cur = conn.cursor()
+
+    for ks_key in ks_keys:
+        valid_keys = attributes_for_ks(ks_key)
+        applicable = {k: v for k, v in weights.items() if k in valid_keys}
+        if not applicable:
+            continue
+        total_weight = sum(applicable.values())
+        if total_weight == 0:
+            continue
+
+        # Use London-wide bounds for ALL fields in this ks_key so the cache is always complete.
+        bounds_key = f"_london_bounds_{ks_key}"
+        if bounds_key not in st.session_state:
+            st.session_state[bounds_key] = fetch_london_bounds(ks_key, list(attributes_for_ks(ks_key)))
+        bounds = st.session_state[bounds_key]
+
+        top10_key = f"_london_top10_{ks_key}"
+        if top10_key not in st.session_state:
+            st.session_state[top10_key] = fetch_top10_thresholds(ks_key, list(attributes_for_ks(ks_key)))
+        top10 = st.session_state[top10_key]
+
+        fields = ", ".join(["LANAME"] + list(applicable.keys()))
+        cur.execute(f"SELECT {fields} FROM metrics_{ks_key} WHERE LANAME IS NOT NULL")
+
+        for row in cur.fetchall():
+            la_name = row[0]
+            if not la_name:
+                continue
+            score_sum = 0.0
+            for i, key in enumerate(applicable.keys()):
+                val = row[i + 1]
+                if binary_flags.get(key):
+                    p10, p90 = top10.get(key, (None, None))
+                    hib = directions.get(key, True)
+                    if val is None:
+                        norm = 0.0
+                    elif hib:
+                        norm = 1.0 if (p90 is not None and val >= p90) else 0.0
+                    else:
+                        norm = 1.0 if (p10 is not None and val <= p10) else 0.0
+                else:
+                    lo_hi = bounds.get(key)
+                    if lo_hi is None or val is None:
+                        norm = 0.5
+                    else:
+                        lo, hi = lo_hi
+                        norm = 0.5 if hi == lo else (val - lo) / (hi - lo)
+                    if directions.get(key) is False:
+                        norm = 1.0 - norm
+                norm = max(0.0, min(1.0, norm))
+                score_sum += norm * applicable[key]
+            custom_score = score_sum / total_weight * 100
+            la_scores.setdefault(la_name, []).append(custom_score)
+
+    conn.close()
+
+    avg_scores = {la: sum(s) / len(s) for la, s in la_scores.items()}
+    high_counts = {la: sum(1 for s in s_list if s >= 60) for la, s_list in la_scores.items()}
+    return avg_scores, high_counts
+
+
 def _rank_las(
     results: list[dict],
     quality: dict[str, float],
@@ -124,7 +202,7 @@ def _rank_las(
 
 
 def render():
-    st.header("Step 2 of 5 — Choose your areas")
+    st.header("Step 3 of 6 — Choose your areas")
 
     postcode = st.session_state.get("work_postcode", "")
     limit = st.session_state.get("commute_limit", 40)
@@ -145,7 +223,7 @@ def render():
         if coords is None:
             st.error(f"Could not resolve postcode **{postcode}**. Please go back and check it.")
             if st.button("← Back"):
-                st.session_state.step = 1
+                st.session_state.step = 2
                 st.rerun()
             return
         st.session_state.work_latlng = coords
@@ -153,20 +231,22 @@ def render():
 
     work_lat, work_lng = st.session_state.work_latlng
 
-    # Compute commute estimates + quality ranking (cached)
-    cache_key = (postcode, limit, flex, tuple(ks_keys))
+    # Compute commute estimates + quality ranking (cached; keyed on weights too)
+    score_weights_key = tuple(sorted(st.session_state.get("score_weights", {}).items()))
+    cache_key = (postcode, limit, flex, tuple(ks_keys), score_weights_key)
     if "la_commute_results" not in st.session_state or st.session_state.get("_commute_key") != cache_key:
         with st.spinner("Estimating commute times and school quality by borough…"):
             results = filter_las_by_commute(work_lat, work_lng, limit, flex)
-            quality = _la_school_quality(ks_keys)
-            high_count = _la_high_score_count(ks_keys)
+            quality, high_count = _la_custom_quality(ks_keys)
             ranked = _rank_las(results, quality, high_count)
         st.session_state.la_commute_results = ranked
         st.session_state._commute_key = cache_key
+        st.session_state._la_quality_cache = quality
 
     results = st.session_state.la_commute_results
     all_profiles = load_profiles()
-    quality = _la_school_quality(ks_keys)
+    quality = st.session_state.get("_la_quality_cache") or {}
+    using_custom = bool(st.session_state.get("score_weights"))
 
     recommended = results[:3]
     recommended_codes = {la["la_code"] for la in recommended}
@@ -175,15 +255,32 @@ def render():
 
     if recommended:
         st.subheader(f"Recommended boroughs for {phases_label}")
-        st.caption(
-            "Ranked by commute time (35%), average school quality (30%), "
-            "and number of schools scoring ≥ 60/100 (35%)."
+        if using_custom:
+            st.caption(
+                "Ranked by commute time (35%), average of your custom school score (30%), "
+                "and number of schools scoring ≥ 60/100 on your custom score (35%)."
+            )
+        else:
+            st.caption(
+                "Ranked by commute time (35%), average school quality (30%), "
+                "and number of schools scoring ≥ 60/100 (35%)."
+            )
+        score_label = "Avg your score" if using_custom else "Avg quality"
+        score_help = (
+            "Average of your custom score across relevant phases."
+            if using_custom else
+            "Average composite score across relevant phases (London avg = 50)."
+        )
+        count_help = (
+            "Number of schools with your custom score ≥ 60/100 in relevant phases."
+            if using_custom else
+            "Number of schools with composite score ≥ 60/100 across relevant phases."
         )
         for la in recommended:
             mn, mx = la["commute_min"], la["commute_max"]
             lines = ", ".join(la["lines"][:3])
             q = quality.get(la["la_name"])
-            q_str = f" · Quality: **{q:.0f}/100**" if q else ""
+            q_str = f" · Score: **{q:.0f}/100**" if q else ""
             hc = la.get("_high_score_count", 0)
             with st.expander(f"**{la['la_name']}** — {mn}–{mx} min commute", expanded=True):
                 cols = st.columns([3, 1])
@@ -193,10 +290,8 @@ def render():
                 with cols[1]:
                     st.metric("Commute", f"{mn}–{mx} min")
                     if q:
-                        st.metric("Avg quality", f"{q:.0f}/100",
-                                  help="Average composite score across relevant phases (London avg = 50).")
-                    st.metric("Schools ≥ 60", str(hc),
-                              help="Number of schools with composite score ≥ 60/100 across relevant phases (above London median with a clear margin).")
+                        st.metric(score_label, f"{q:.0f}/100", help=score_help)
+                    st.metric("Schools ≥ 60", str(hc), help=count_help)
     else:
         st.warning(
             f"No boroughs found within {effective} minutes of {postcode}. "
@@ -236,7 +331,7 @@ def render():
     col_back, col_next = st.columns([1, 3])
     with col_back:
         if st.button("← Back"):
-            st.session_state.step = 1
+            st.session_state.step = 2
             st.rerun()
     with col_next:
         if st.button(
@@ -248,7 +343,7 @@ def render():
             st.session_state.selected_la_codes = selected_codes
             st.session_state.selected_las = selected_las
             st.session_state.ks_keys = ks_keys
-            st.session_state.step = 3
+            st.session_state.step = 4
             st.rerun()
 
     if not selected_codes:
